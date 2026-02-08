@@ -1,8 +1,8 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 import classNames from 'classnames/bind';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Avatar, Button, Input, Modal, Pagination, Select, Tag, Tooltip } from 'antd';
+import { Avatar, Button, Input, Pagination, Select, Tag, Tooltip } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCircleDot,
@@ -16,7 +16,9 @@ import {
 import dayjs from 'dayjs';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
 import usersApi, { USERS_QUERY_KEY } from '@/api/users.api';
-import useDebounce from '@/hooks/useDebounce';
+import useTable from '@/hooks/useTable';
+import useConfirmDialog from '@/hooks/useConfirmDialog';
+import ConfirmModal from '@/components/ConfirmModal/ConfirmModal';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
 import useToast from '@/components/Toast/Toast';
@@ -73,11 +75,10 @@ export default function UsersPage() {
   const queryClient = useQueryClient();
   const { setPageActions, setBreadcrumbs } = useContext(AdminPageContext);
   const { contextHolder, open: openToast } = useToast();
-  const [searchValue, setSearchValue] = useState('');
-  const [roleValue, setRoleValue] = useState('all');
-  const [statusValue, setStatusValue] = useState('all');
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const debouncedSearch = useDebounce(searchValue, 400);
+
+  // Table and dialog state management
+  const table = useTable({ initialPageSize: 10, debounceDelay: 400 });
+  const deleteDialog = useConfirmDialog();
 
   useEffect(() => {
     setBreadcrumbs([
@@ -104,14 +105,14 @@ export default function UsersPage() {
     () => [
       USERS_QUERY_KEY,
       {
-        page: pagination.current,
-        pageSize: pagination.pageSize,
-        search: debouncedSearch.trim(),
-        role: roleValue,
-        status: statusValue,
+        page: table.pagination.current,
+        pageSize: table.pagination.pageSize,
+        search: table.filters.debouncedSearch.trim(),
+        role: table.filters.customFilters.role || 'all',
+        status: table.filters.customFilters.status || 'all',
       },
     ],
-    [pagination, debouncedSearch, roleValue, statusValue],
+    [table.pagination, table.filters.debouncedSearch, table.filters.customFilters],
   );
 
   const { data, isFetching } = useQuery({
@@ -125,9 +126,11 @@ export default function UsersPage() {
     onSuccess: (response) => {
       openToast({ message: response?.message || 'Đã xóa người dùng.', variant: 'success' });
       queryClient.invalidateQueries({ queryKey: [USERS_QUERY_KEY] });
+      deleteDialog.handleSuccess();
     },
     onError: (error) => {
       openToast({ message: error.response?.data?.error || 'Không thể xóa người dùng.', variant: 'danger' });
+      deleteDialog.handleError();
     },
   });
 
@@ -145,21 +148,12 @@ export default function UsersPage() {
     (record) => {
       if (!record?.id) return;
       const displayName = record.fullName || record.email || 'người dùng này';
-      Modal.confirm({
-        title: 'Xóa người dùng',
-        content: (
-          <span>
-            Bạn có chắc chắn muốn xóa <strong>{displayName}</strong> khỏi hệ thống?
-          </span>
-        ),
-        okText: 'Xóa',
-        cancelText: 'Hủy',
-        okButtonProps: { danger: true },
-        centered: true,
-        onOk: () => deleteUserMutation.mutateAsync(record.id),
+      deleteDialog.openDialog({
+        userId: record.id,
+        displayName,
       });
     },
-    [deleteUserMutation],
+    [deleteDialog],
   );
 
   const renderSortIcon = useCallback(
@@ -172,32 +166,22 @@ export default function UsersPage() {
     [],
   );
 
-  const isDeletingUser = deleteUserMutation.isLoading;
+  const isDeletingUser = deleteUserMutation.isPending;
 
   const handleResetFilters = () => {
-    setSearchValue('');
-    setRoleValue('all');
-    setStatusValue('all');
-    setPagination((prev) => ({ current: 1, pageSize: prev.pageSize }));
+    table.filters.resetFilters();
   };
 
   const handleSearchChange = (event) => {
-    setSearchValue(event.target.value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setSearch(event.target.value);
   };
 
   const handleRoleChange = (value) => {
-    setRoleValue(value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setCustomFilter('role', value);
   };
 
   const handleStatusChange = (value) => {
-    setStatusValue(value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  };
-
-  const handlePageChange = (page, pageSize) => {
-    setPagination({ current: page, pageSize });
+    table.filters.setCustomFilter('status', value);
   };
 
   const columns = useMemo(
@@ -273,7 +257,7 @@ export default function UsersPage() {
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      index: ({ index }) => (table.pagination.current - 1) * table.pagination.pageSize + index + 1,
       fullName: ({ record }) => (
         <div className={cx('users-page__user-cell')}>
           <Avatar size={44} src={record.avatarUrl} className={cx('users-page__avatar')}>
@@ -326,11 +310,11 @@ export default function UsersPage() {
         </div>
       ),
     }),
-    [handleDeleteUser, handleEditUser, isDeletingUser, pagination],
+    [handleDeleteUser, handleEditUser, isDeletingUser],
   );
 
   const hasUsers = users.length > 0;
-  const startIndex = hasUsers ? (pagination.current - 1) * pagination.pageSize + 1 : 0;
+  const startIndex = hasUsers ? (table.pagination.current - 1) * table.pagination.pageSize + 1 : 0;
   const endIndex = hasUsers ? startIndex + users.length - 1 : 0;
 
   return (
@@ -341,7 +325,7 @@ export default function UsersPage() {
           <Input
             size="large"
             allowClear
-            value={searchValue}
+            value={table.filters.search}
             onChange={handleSearchChange}
             placeholder="Tìm kiếm người dùng..."
             prefix={<FontAwesomeIcon icon={faSearch} />}
@@ -350,7 +334,7 @@ export default function UsersPage() {
 
           <Select
             size="large"
-            value={roleValue}
+            value={table.filters.customFilters.role || 'all'}
             onChange={handleRoleChange}
             options={ROLE_OPTIONS}
             className={cx('users-page__filter-select')}
@@ -358,7 +342,7 @@ export default function UsersPage() {
 
           <Select
             size="large"
-            value={statusValue}
+            value={table.filters.customFilters.status || 'all'}
             onChange={handleStatusChange}
             options={STATUS_OPTIONS}
             className={cx('users-page__filter-select')}
@@ -400,15 +384,33 @@ export default function UsersPage() {
                 : 'Không có người dùng'}
             </div>
             <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
+              current={table.pagination.current}
+              pageSize={table.pagination.pageSize}
               total={totalItems}
-              onChange={handlePageChange}
+              onChange={table.pagination.onChange}
               showSizeChanger={false}
             />
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        {...deleteDialog.dialogProps}
+        title="Xóa người dùng"
+        variant="danger"
+        confirmText="Xóa"
+        onConfirm={async () => {
+          if (deleteDialog.data?.userId) {
+            await deleteUserMutation.mutateAsync(deleteDialog.data.userId);
+          }
+        }}
+      >
+        {deleteDialog.data?.displayName && (
+          <span>
+            Bạn có chắc chắn muốn xóa <strong>{deleteDialog.data.displayName}</strong> khỏi hệ thống?
+          </span>
+        )}
+      </ConfirmModal>
     </>
   );
 }

@@ -1,0 +1,224 @@
+.activity-calendar {
+  width: 100%;
+  padding: 24px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  background-color: var(--white-color);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  @media (max-width: 768px) {
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 576px) {
+    padding: 16px;
+    border-radius: 8px;
+    gap: 12px;
+  }
+
+  :global {
+    .ant-picker-cell {
+      padding: 5px !important;
+
+      @media (max-width: 768px) {
+        padding: 4px !important;
+      }
+
+      @media (max-width: 576px) {
+        padding: 3px !important;
+      }
+    }
+
+    .ant-picker-panel .ant-picker-content thead th,
+    .ant-picker-calendar .ant-picker-content thead th {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 600;
+      color: var(--orange-color) !important;
+      letter-spacing: 0.2px;
+
+      @media (max-width: 576px) {
+        font-size: 12px;
+      }
+    }
+
+    .ant-picker-calendar-date-value {
+      @media (max-width: 576px) {
+        font-size: 13px;
+      }
+    }
+  }
+
+  &__title {
+    color: var(--primary-color);
+    font-size: 18px;
+    font-weight: 600;
+
+    @media (max-width: 768px) {
+      font-size: 16px;
+    }
+
+    @media (max-width: 576px) {
+      font-size: 15px;
+    }
+  }
+
+  &__panel {
+    width: 100%;
+    background: transparent;
+  }
+
+  &__cell {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 34px;
+    margin: 2px auto;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #555;
+    font-family: 'Montserrat', sans-serif;
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease,
+      transform 0.2s ease;
+
+    @media (max-width: 768px) {
+      height: 32px;
+      border-radius: 6px;
+    }
+
+    @media (max-width: 576px) {
+      height: 30px;
+      border-radius: 4px;
+    }
+
+    &:hover {
+      transform: scale(1.05);
+    }
+
+    &--in-view {
+      color: var(--black-color);
+    }
+
+    &--has-event {
+      box-shadow: inset 0 0 0 1px rgba(0, 31, 143, 0.08);
+    }
+
+    &--primary {
+      background-color: var(--primary-color);
+      color: var(--white-color);
+    }
+
+    &--warning {
+      background-color: var(--warning-color);
+      color: var(--white-color);
+    }
+
+    &--success {
+      background-color: var(--success-color);
+      color: var(--white-color);
+    }
+
+    &--error {
+      background-color: var(--danger-color);
+      color: var(--white-color);
+    }
+  }
+
+  &__date {
+    line-height: 1;
+
+    @media (max-width: 576px) {
+      font-size: 13px;
+    }
+  }
+
+  &__legend {
+    margin-top: 8px;
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+
+    @media (max-width: 768px) {
+      gap: 16px;
+    }
+
+    @media (max-width: 576px) {
+      gap: 12px;
+    }
+  }
+
+  &__legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #333;
+
+    @media (max-width: 768px) {
+      font-size: 13px;
+      gap: 6px;
+    }
+
+    @media (max-width: 576px) {
+      font-size: 12px;
+      gap: 5px;
+    }
+  }
+
+  &__legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    @media (max-width: 576px) {
+      width: 10px;
+      height: 10px;
+    }
+
+    &--primary {
+      background-color: var(--primary-color);
+    }
+
+    &--warning {
+      background-color: var(--warning-color);
+    }
+
+    &--success {
+      background-color: var(--success-color);
+    }
+
+    &--error {
+      background-color: var(--danger-color);
+    }
+  }
+
+  &__skeleton {
+    width: 100%;
+    height: 320px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s ease-in-out infinite;
+
+    @media (max-width: 576px) {
+      height: 280px;
+    }
+  }
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

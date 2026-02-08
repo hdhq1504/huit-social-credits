@@ -20,7 +20,7 @@ import AdminTable from '@/admin/components/AdminTable/AdminTable';
 import registrationsApi, { ADMIN_REGISTRATIONS_QUERY_KEY } from '@/api/registrations.api.js';
 import { ROUTE_PATHS, buildPath } from '@/config/routes.config.js';
 import useToast from '@/components/Toast/Toast.jsx';
-import useDebounce from '@/hooks/useDebounce.jsx';
+import useTable from '@/hooks/useTable.jsx';
 import styles from './ScoringPage.module.scss';
 
 const cx = classNames.bind(styles);
@@ -67,19 +67,12 @@ const renderAttendanceStatus = (entry) => {
 function ScoringPage() {
   const navigate = useNavigate();
   const { contextHolder, open: openToast } = useToast();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    faculty: undefined,
-    className: undefined,
-    activityId: undefined,
-  });
+  const { setBreadcrumbs, setPageActions } = useContext(AdminPageContext);
+
+  // Table state management
+  const table = useTable({ initialPageSize: PAGE_SIZE, debounceDelay: 500 });
   const [filterOptions, setFilterOptions] = useState({ faculties: [], classes: [], activities: [] });
   const [statusCounts, setStatusCounts] = useState({ all: 0, pending: 0, approved: 0, rejected: 0 });
-  const [pagination, setPagination] = useState({ current: 1, pageSize: PAGE_SIZE, total: 0 });
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const { setBreadcrumbs, setPageActions } = useContext(AdminPageContext);
-  const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -95,18 +88,19 @@ function ScoringPage() {
 
   const queryParams = useMemo(() => {
     const params = {
-      page: pagination.current,
-      pageSize: pagination.pageSize,
-      search: debouncedSearchTerm || undefined,
+      page: table.pagination.current,
+      pageSize: table.pagination.pageSize,
+      search: table.filters.debouncedSearch || undefined,
     };
 
-    if (filters.status && filters.status !== 'all') params.status = filters.status;
-    if (filters.faculty) params.faculty = filters.faculty;
-    if (filters.className) params.className = filters.className;
-    if (filters.activityId) params.activityId = filters.activityId;
+    const status = table.filters.customFilters.status;
+    if (status && status !== 'all') params.status = status;
+    if (table.filters.customFilters.faculty) params.faculty = table.filters.customFilters.faculty;
+    if (table.filters.customFilters.className) params.className = table.filters.customFilters.className;
+    if (table.filters.customFilters.activityId) params.activityId = table.filters.customFilters.activityId;
 
     return params;
-  }, [pagination.current, pagination.pageSize, debouncedSearchTerm, filters]);
+  }, [table.pagination, table.filters.debouncedSearch, table.filters.customFilters]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: [ADMIN_REGISTRATIONS_QUERY_KEY, queryParams],
@@ -125,15 +119,6 @@ function ScoringPage() {
   }, [error, openToast]);
 
   useEffect(() => {
-    const pageInfo = data?.pagination;
-    if (pageInfo) {
-      setPagination((prev) => ({
-        current: pageInfo.page ?? prev.current,
-        pageSize: pageInfo.pageSize ?? prev.pageSize,
-        total: pageInfo.total ?? prev.total,
-      }));
-    }
-
     const stats = data?.stats ?? {};
     const faculties = (data?.filterOptions?.faculties ?? []).map((item) => {
       if (typeof item === 'string') return { label: item, value: item };
@@ -157,37 +142,37 @@ function ScoringPage() {
   useEffect(() => {
     const regLength = data?.registrations?.length || 0;
     if (!regLength) {
-      setSelectedRowKeys([]);
+      table.selection.clearSelection();
       return;
     }
     const regIds = data.registrations.map((item) => item.id);
-    setSelectedRowKeys((prev) => prev.filter((key) => regIds.includes(key)));
+    table.selection.setSelectedKeys((prev) => prev.filter((key) => regIds.includes(key)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  const handleStatusFilterChange = useCallback((statusValue) => {
-    setFilters((prev) => ({ ...prev, status: statusValue ?? 'all' }));
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  }, []);
+  const handleStatusFilterChange = useCallback(
+    (statusValue) => {
+      table.filters.setCustomFilter('status', statusValue ?? 'all');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setSearch(event.target.value);
   };
 
   const handleResetFilters = () => {
-    setSearchTerm('');
-    setFilters({ status: 'all', faculty: undefined, className: undefined, activityId: undefined });
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.resetFilters();
   };
 
   const handleSelectChange = (key) => (value) => {
-    setFilters((prev) => ({ ...prev, [key]: value || undefined }));
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setCustomFilter(key, value || undefined);
   };
 
   const rowSelection = {
-    selectedRowKeys,
-    onChange: setSelectedRowKeys,
+    selectedRowKeys: table.selection.selectedKeys,
+    onChange: table.selection.setSelectedKeys,
   };
 
   const renderSortIcon = useCallback(
@@ -257,7 +242,7 @@ function ScoringPage() {
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      index: ({ index }) => (table.pagination.current - 1) * table.pagination.pageSize + index + 1,
       student: ({ record }) => (
         <div className={cx('scoring-page__student')}>
           <Avatar src={record.student?.avatarUrl || '/images/profile.png'} />
@@ -317,7 +302,7 @@ function ScoringPage() {
         </Tooltip>
       ),
     }),
-    [navigate, pagination],
+    [navigate],
   );
 
   const statusOptions = useMemo(
@@ -338,7 +323,7 @@ function ScoringPage() {
         <Input
           placeholder="Tìm kiếm hoạt động, sinh viên..."
           className={cx('scoring-page__filter-search')}
-          value={searchTerm}
+          value={table.filters.search}
           onChange={handleSearchChange}
           allowClear
         />
@@ -346,7 +331,7 @@ function ScoringPage() {
           placeholder="Khoa"
           className={cx('scoring-page__filter-select')}
           allowClear
-          value={filters.faculty}
+          value={table.filters.customFilters.faculty}
           options={filterOptions.faculties}
           optionFilterProp="label"
           onChange={handleSelectChange('faculty')}
@@ -355,7 +340,7 @@ function ScoringPage() {
           placeholder="Lớp"
           className={cx('scoring-page__filter-select')}
           allowClear
-          value={filters.className}
+          value={table.filters.customFilters.className}
           options={filterOptions.classes}
           optionFilterProp="label"
           onChange={handleSelectChange('className')}
@@ -365,7 +350,7 @@ function ScoringPage() {
           className={cx('scoring-page__filter-select')}
           allowClear
           showSearch
-          value={filters.activityId}
+          value={table.filters.customFilters.activityId}
           options={filterOptions.activities}
           optionFilterProp="label"
           onChange={handleSelectChange('activityId')}
@@ -374,7 +359,7 @@ function ScoringPage() {
           allowClear
           placeholder="Trạng thái"
           className={cx('scoring-page__filter-select')}
-          value={filters.status === 'all' ? undefined : filters.status}
+          value={table.filters.customFilters.status === 'all' ? undefined : table.filters.customFilters.status}
           options={statusOptions}
           optionFilterProp="label"
           onChange={handleStatusFilterChange}
@@ -404,15 +389,15 @@ function ScoringPage() {
 
         <div className={cx('scoring-page__footer')}>
           <Typography.Text className={cx('scoring-page__selection-info')}>
-            Đã chọn <Typography.Text strong>{selectedRowKeys.length}</Typography.Text> trong{' '}
-            <Typography.Text strong>{pagination.total}</Typography.Text> kết quả
+            Đã chọn <Typography.Text strong>{table.selection.selectedKeys.length}</Typography.Text> trong{' '}
+            <Typography.Text strong>{table.pagination.total}</Typography.Text> kết quả
           </Typography.Text>
           <Pagination
-            current={pagination.current}
-            total={pagination.total}
-            pageSize={pagination.pageSize}
+            current={table.pagination.current}
+            total={table.pagination.total}
+            pageSize={table.pagination.pageSize}
             showSizeChanger={false}
-            onChange={(page) => setPagination((prev) => ({ ...prev, current: page }))}
+            onChange={table.pagination.onChange}
           />
         </div>
       </div>

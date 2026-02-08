@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import classNames from 'classnames/bind';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Avatar, Button, Checkbox, Input, Modal, Pagination, Select, Tag, Tooltip, Form } from 'antd';
+import { Avatar, Button, Checkbox, Input, Pagination, Select, Tag, Tooltip, Form } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCircleDot,
@@ -17,10 +17,14 @@ import {
 import dayjs from 'dayjs';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
 import lecturersApi, { LECTURERS_QUERY_KEY } from '@/api/lecturers.api';
-import useDebounce from '@/hooks/useDebounce';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
 import useToast from '@/components/Toast/Toast';
+import useTable from '@/hooks/useTable';
+import useConfirmDialog from '@/hooks/useConfirmDialog';
+import useModal from '@/hooks/useModal';
+import ConfirmModal from '@/components/ConfirmModal/ConfirmModal';
+import BaseModal from '@/components/BaseModal/BaseModal';
 import styles from './LecturersPage.module.scss';
 
 const cx = classNames.bind(styles);
@@ -55,13 +59,13 @@ export default function LecturersPage() {
   const queryClient = useQueryClient();
   const { setPageActions, setBreadcrumbs } = useContext(AdminPageContext);
   const { contextHolder, open: openToast } = useToast();
-  const [searchValue, setSearchValue] = useState('');
-  const [statusValue, setStatusValue] = useState('all');
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const debouncedSearch = useDebounce(searchValue, 400);
 
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedLecturer, setSelectedLecturer] = useState(null);
+  // Table state management
+  const table = useTable({ initialPageSize: 10, debounceDelay: 400 });
+  const [statusValue, setStatusValue] = useState('all');
+
+  // Assign modal state
+  const assignModal = useModal();
   const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(false);
   const [assignForm] = Form.useForm();
 
@@ -90,13 +94,13 @@ export default function LecturersPage() {
     () => [
       LECTURERS_QUERY_KEY,
       {
-        page: pagination.current,
-        pageSize: pagination.pageSize,
-        search: debouncedSearch.trim(),
+        page: table.pagination.current,
+        pageSize: table.pagination.pageSize,
+        search: table.filters.debouncedSearch.trim(),
         status: statusValue,
       },
     ],
-    [pagination, debouncedSearch, statusValue],
+    [table.pagination, table.filters.debouncedSearch, statusValue],
   );
 
   const { data, isFetching } = useQuery({
@@ -108,7 +112,7 @@ export default function LecturersPage() {
   const { data: availableClasses } = useQuery({
     queryKey: ['admin', 'classes', 'available'],
     queryFn: lecturersApi.getAvailableClasses,
-    enabled: isAssignModalOpen,
+    enabled: assignModal.isOpen,
   });
 
   const deleteLecturerMutation = useMutation({
@@ -126,13 +130,19 @@ export default function LecturersPage() {
     mutationFn: (payload) => lecturersApi.assignHomeroom(payload),
     onSuccess: (response) => {
       openToast({ message: response?.message || 'Đã phân công chủ nhiệm.', variant: 'success' });
-      setIsAssignModalOpen(false);
+      assignModal.close();
       assignForm.resetFields();
-      setSelectedLecturer(null);
       queryClient.invalidateQueries({ queryKey: [LECTURERS_QUERY_KEY] });
     },
     onError: (error) => {
       openToast({ message: error.response?.data?.error || 'Phân công thất bại.', variant: 'danger' });
+    },
+  });
+
+  // Delete confirmation dialog
+  const deleteDialog = useConfirmDialog({
+    onConfirm: async (lecturer) => {
+      await deleteLecturerMutation.mutateAsync(lecturer.id);
     },
   });
 
@@ -149,42 +159,23 @@ export default function LecturersPage() {
   const handleDeleteLecturer = useCallback(
     (record) => {
       if (!record?.id) return;
-      const displayName = record.fullName || record.staffCode || 'giảng viên này';
-      Modal.confirm({
-        title: 'Xóa giảng viên',
-        content: (
-          <span>
-            Bạn có chắc chắn muốn xóa <strong>{displayName}</strong> khỏi hệ thống?
-          </span>
-        ),
-        okText: 'Xóa',
-        cancelText: 'Hủy',
-        okButtonProps: { danger: true },
-        centered: true,
-        onOk: () => deleteLecturerMutation.mutateAsync(record.id),
-      });
+      deleteDialog.open(record);
     },
-    [deleteLecturerMutation],
+    [deleteDialog],
   );
 
-  const handleOpenAssignModal = (record) => {
-    setSelectedLecturer(record);
-    // Pre-fill if lecturer already has classes?
-    // The API might return current classes. For now, we just allow adding/overwriting.
-    // If we want to show current classes, we need to fetch them or have them in the record.
-    // Assuming record has `homeroomClasses` or similar if we updated the list API.
-    // If not, we start empty or fetch details.
-    // Let's assume we start fresh or just show available classes.
-    // Actually, the requirement says "assign homeroom teachers to multiple classes".
-    // So we select classes for this teacher.
-    assignForm.setFieldsValue({ classIds: [] });
-    setIsAssignModalOpen(true);
-  };
+  const handleOpenAssignModal = useCallback(
+    (record) => {
+      assignModal.open(record);
+      assignForm.setFieldsValue({ classIds: [] });
+    },
+    [assignModal, assignForm],
+  );
 
   const handleAssignSubmit = (values) => {
-    if (!selectedLecturer) return;
+    if (!assignModal.data) return;
     assignHomeroomMutation.mutate({
-      teacherId: selectedLecturer.id,
+      teacherId: assignModal.data.id,
       classIds: values.classIds,
     });
   };
@@ -199,26 +190,20 @@ export default function LecturersPage() {
     [],
   );
 
-  const isDeleting = deleteLecturerMutation.isLoading;
+  const isDeleting = deleteLecturerMutation.isPending;
 
   const handleResetFilters = () => {
-    setSearchValue('');
+    table.filters.setSearch('');
     setStatusValue('all');
-    setPagination((prev) => ({ current: 1, pageSize: prev.pageSize }));
+    table.resetPagination();
   };
 
   const handleSearchChange = (event) => {
-    setSearchValue(event.target.value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setSearch(event.target.value);
   };
 
   const handleStatusChange = (value) => {
     setStatusValue(value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  };
-
-  const handlePageChange = (page, pageSize) => {
-    setPagination({ current: page, pageSize });
   };
 
   const columns = useMemo(
@@ -277,7 +262,7 @@ export default function LecturersPage() {
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      index: ({ index }) => (table.pagination.current - 1) * table.pagination.pageSize + index + 1,
       fullName: ({ record }) => (
         <div className={cx('lecturers-page__user-cell')}>
           <Avatar size={40} src={record.avatarUrl} className={cx('lecturers-page__avatar')}>
@@ -335,11 +320,11 @@ export default function LecturersPage() {
         </div>
       ),
     }),
-    [handleDeleteLecturer, handleEditLecturer, isDeleting, pagination],
+    [handleDeleteLecturer, handleEditLecturer, handleOpenAssignModal, isDeleting, table.pagination],
   );
 
   const hasLecturers = lecturers.length > 0;
-  const startIndex = hasLecturers ? (pagination.current - 1) * pagination.pageSize + 1 : 0;
+  const startIndex = hasLecturers ? (table.pagination.current - 1) * table.pagination.pageSize + 1 : 0;
   const endIndex = hasLecturers ? startIndex + lecturers.length - 1 : 0;
 
   const classOptions = useMemo(() => {
@@ -365,7 +350,7 @@ export default function LecturersPage() {
           <Input
             size="large"
             allowClear
-            value={searchValue}
+            value={table.filters.search}
             onChange={handleSearchChange}
             placeholder="Tìm kiếm giảng viên..."
             prefix={<FontAwesomeIcon icon={faSearch} />}
@@ -416,22 +401,26 @@ export default function LecturersPage() {
                 : 'Không có giảng viên'}
             </div>
             <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
+              current={table.pagination.current}
+              pageSize={table.pagination.pageSize}
               total={totalItems}
-              onChange={handlePageChange}
+              onChange={table.pagination.onChange}
               showSizeChanger={false}
             />
           </div>
         </div>
       </div>
 
-      <Modal
-        title={`Phân công chủ nhiệm - ${selectedLecturer?.fullName || ''}`}
-        open={isAssignModalOpen}
-        onCancel={() => setIsAssignModalOpen(false)}
+      {/* Assign Homeroom Modal */}
+      <BaseModal
+        isOpen={assignModal.isOpen}
+        onClose={() => {
+          assignModal.close();
+          setShowOnlyUnassigned(false);
+        }}
+        title={`Phân công chủ nhiệm - ${assignModal.data?.fullName || ''}`}
+        size="md"
         footer={null}
-        destroyOnClose
       >
         <Form form={assignForm} layout="vertical" onFinish={handleAssignSubmit}>
           <Form.Item
@@ -452,14 +441,34 @@ export default function LecturersPage() {
               Chỉ hiển thị lớp chưa có GVCN
             </Checkbox>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Button onClick={() => setIsAssignModalOpen(false)}>Hủy</Button>
-              <Button type="primary" htmlType="submit" loading={assignHomeroomMutation.isLoading}>
+              <Button
+                onClick={() => {
+                  assignModal.close();
+                  setShowOnlyUnassigned(false);
+                }}
+              >
+                Hủy
+              </Button>
+              <Button type="primary" htmlType="submit" loading={assignHomeroomMutation.isPending}>
                 Lưu phân công
               </Button>
             </div>
           </div>
         </Form>
-      </Modal>
+      </BaseModal>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteDialog.isOpen}
+        onConfirm={deleteDialog.confirm}
+        onCancel={deleteDialog.close}
+        isLoading={deleteDialog.isLoading}
+        title="Xóa giảng viên"
+        message={`Bạn có chắc chắn muốn xóa ${deleteDialog.data?.fullName || deleteDialog.data?.staffCode || 'giảng viên này'} khỏi hệ thống?`}
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+      />
     </>
   );
 }

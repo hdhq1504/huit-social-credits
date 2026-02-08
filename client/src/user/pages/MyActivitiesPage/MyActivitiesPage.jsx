@@ -1,35 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import classNames from 'classnames/bind';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowRotateRight,
-  faCalendarCheck,
-  faCircleCheck,
-  faClock,
-  faTrophy,
-  faUserXmark,
-} from '@fortawesome/free-solid-svg-icons';
-import { Button, Calendar, ConfigProvider, DatePicker, Empty, Input, Pagination, Tabs } from 'antd';
+import { faCalendarCheck, faCircleCheck, faClock, faUserXmark } from '@fortawesome/free-solid-svg-icons';
+import { Calendar, ConfigProvider, Empty, Pagination, Tabs } from 'antd';
 import viVN from 'antd/es/locale/vi_VN';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import updateLocale from 'dayjs/plugin/updateLocale';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { CardActivity, Label, useToast } from '@components/index';
 import activitiesApi, { MY_ACTIVITIES_QUERY_KEY } from '@api/activities.api';
 import { ROUTE_PATHS } from '@/config/routes.config';
 import useInvalidateActivities from '@/hooks/useInvalidateActivities';
 import useRegistrationFilters from '@/hooks/useRegistrationFilters';
-import uploadService from '@/services/uploadService';
-import { computeDescriptorFromDataUrl } from '@/services/faceApiService';
 import useAuthStore from '@/stores/useAuthStore';
-import { fileToDataUrl } from '@utils/file';
+import ActivityStatsCards from '@/user/components/ActivityStatsCards/ActivityStatsCards.jsx';
+import ActivityFilters from '@/user/components/ActivityFilters/ActivityFilters.jsx';
+import ActivityCalendar from '@/user/components/ActivityCalendar/ActivityCalendar.jsx';
+import useActivityStats from '@/hooks/useActivityStats';
+import useMyActivities from '@/hooks/useMyActivities';
 import styles from './MyActivitiesPage.module.scss';
 
 const cx = classNames.bind(styles);
 const PAGE_SIZE = 6;
-const { RangePicker } = DatePicker;
 
 dayjs.extend(updateLocale);
 dayjs.locale('vi');
@@ -68,89 +62,21 @@ function MyActivitiesPage() {
 
   const invalidateActivityQueries = useInvalidateActivities();
 
-  const registerMutation = useMutation({
-    mutationFn: ({ id, note }) => activitiesApi.register(id, { note }),
-    onSuccess: async () => {
-      await invalidateActivityQueries();
-      toast({ message: 'Đăng ký hoạt động thành công!', variant: 'success' });
-    },
-    onError: (error) => {
-      const message = error.response?.data?.error || 'Không thể đăng ký hoạt động. Vui lòng thử lại.';
-      toast({ message, variant: 'danger' });
-    },
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: ({ id, reason, note }) => activitiesApi.cancel(id, { reason, note }),
-    onSuccess: async () => {
-      await invalidateActivityQueries();
-      toast({ message: 'Hủy đăng ký hoạt động thành công!', variant: 'success' });
-    },
-    onError: (error) => {
-      const message = error.response?.data?.error || 'Không thể hủy đăng ký hoạt động. Vui lòng thử lại.';
-      toast({ message, variant: 'danger' });
-    },
-  });
-
-  const attendanceMutation = useMutation({
-    mutationFn: ({ id, payload }) => activitiesApi.attendance(id, payload),
-    onSuccess: async (data) => {
-      await invalidateActivityQueries();
-      return data;
-    },
-    onError: (error) => {
-      const rawMessage = error.response?.data?.error;
-      const message =
-        typeof rawMessage === 'string' && rawMessage.trim()
-          ? rawMessage.trim()
-          : 'Không thể điểm danh hoạt động. Vui lòng thử lại.';
-      toast({ message, variant: 'danger' });
-      if (error && typeof error === 'object') {
-        try {
-          Object.defineProperty(error, 'handledByToast', { value: true, configurable: true, writable: true });
-        } catch {
-          // ignore
-        }
-      }
-    },
-  });
-
-  const feedbackMutation = useMutation({
-    mutationFn: ({ id, content, attachments }) => activitiesApi.feedback(id, { content, attachments }),
-    onSuccess: async () => {
-      await invalidateActivityQueries();
-      toast({ message: 'Gửi phản hồi thành công!', variant: 'success' });
-    },
-    onError: (error) => {
-      const message = error.response?.data?.error || 'Không thể gửi phản hồi. Vui lòng thử lại.';
-      toast({ message, variant: 'danger' });
-    },
+  const {
+    mutations,
+    actions: { handleRegister, handleCancel, handleAttendance, handleFeedback },
+  } = useMyActivities({
+    toast,
+    userId,
+    invalidateQueries: invalidateActivityQueries,
   });
 
   useEffect(() => {
     setPages({ registered: 1, attended: 1, canceled: 1, absent: 1 });
   }, [filteredRegistrations, registrations.length]);
 
-  const stats = useMemo(() => {
-    const registered = filteredRegistrations.filter(
-      (item) =>
-        item.status === 'DANG_KY' && !['check_in', 'check_out', 'attendance_open'].includes(item.activity?.state),
-    );
-    const attended = filteredRegistrations.filter((item) => item.status === 'DA_THAM_GIA');
-    const canceled = filteredRegistrations.filter((item) => item.status === 'DA_HUY');
-    const absent = filteredRegistrations.filter((item) => item.status === 'VANG_MAT');
-    const totalPoints = attended.reduce((sum, item) => sum + (item.activity?.points ?? 0), 0);
-
-    return {
-      totalPoints,
-      totalActivities: filteredRegistrations.length,
-      completed: attended.length,
-      registered,
-      attended,
-      canceled,
-      absent,
-    };
-  }, [filteredRegistrations]);
+  // Calculate stats using custom hook
+  const stats = useActivityStats(filteredRegistrations);
 
   const handlePageChange = useCallback((tabKey, page) => {
     setPages((prev) => ({ ...prev, [tabKey]: page }));
@@ -170,153 +96,6 @@ function MyActivitiesPage() {
       };
     },
     [pages],
-  );
-
-  const calendarEvents = useMemo(() => {
-    const map = {};
-    filteredRegistrations.forEach((registration) => {
-      const activity = registration.activity;
-      if (!activity?.startTime) return;
-      const key = dayjs(activity.startTime).format('YYYY-MM-DD');
-      if (map[key]) return;
-      let type = 'primary';
-      if (registration.status === 'DA_THAM_GIA') type = 'success';
-      else if (registration.status === 'VANG_MAT') type = 'error';
-      else if (registration.status === 'DA_HUY') type = 'warning';
-      map[key] = { type, label: activity.title };
-    });
-    return map;
-  }, [filteredRegistrations]);
-
-  const fullCellRender = (current, info) => {
-    const key = dayjs(current).format('YYYY-MM-DD');
-    const event = calendarEvents[key];
-    const isCurrentMonth = info.originNode?.props?.className?.includes('ant-picker-cell-in-view');
-
-    return (
-      <div
-        className={cx('my-activities__calendar-cell', {
-          'my-activities__calendar-cell--in-view': isCurrentMonth,
-          'my-activities__calendar-cell--has-event': Boolean(event),
-          'my-activities__calendar-cell--primary': event?.type === 'primary',
-          'my-activities__calendar-cell--warning': event?.type === 'warning',
-          'my-activities__calendar-cell--success': event?.type === 'success',
-          'my-activities__calendar-cell--error': event?.type === 'error',
-        })}
-      >
-        <span className={cx('my-activities__calendar-date')}>{current.date()}</span>
-      </div>
-    );
-  };
-
-  const handleRegister = useCallback(
-    async ({ activity, note }) => {
-      if (!activity?.id) return;
-      await registerMutation.mutateAsync({ id: activity.id, note });
-    },
-    [registerMutation],
-  );
-
-  const handleCancel = useCallback(
-    async ({ activity, reason, note }) => {
-      if (!activity?.id) return;
-      await cancelMutation.mutateAsync({ id: activity.id, reason, note });
-    },
-    [cancelMutation],
-  );
-
-  const handleAttendance = useCallback(
-    async ({ activity, dataUrl, file, phase, faceDescriptor, faceError }) => {
-      if (!activity?.id) return;
-
-      let evidenceDataUrl = dataUrl ?? null;
-      if (!evidenceDataUrl && file) {
-        try {
-          evidenceDataUrl = await fileToDataUrl(file);
-        } catch (error) {
-          console.error('[MyActivitiesPage] Không convert file -> dataURL:', error);
-          toast({
-            message: 'Không thể đọc file ảnh. Vui lòng thử lại.',
-            variant: 'danger',
-          });
-          throw new Error('ATTENDANCE_ABORTED');
-        }
-      }
-
-      const isPhotoAttendance = activity?.attendanceMethod === 'photo';
-      let descriptorPayload = null;
-      let faceErrorPayload = faceError ?? null;
-
-      if (isPhotoAttendance) {
-        if (faceDescriptor && typeof faceDescriptor === 'object') {
-          try {
-            descriptorPayload = Array.from(faceDescriptor);
-          } catch {
-            descriptorPayload = Array.isArray(faceDescriptor) ? faceDescriptor : null;
-          }
-        }
-
-        if (!descriptorPayload && !faceErrorPayload && evidenceDataUrl) {
-          try {
-            const computedDescriptor = await computeDescriptorFromDataUrl(evidenceDataUrl);
-            if (computedDescriptor?.length) {
-              descriptorPayload = computedDescriptor;
-            } else {
-              faceErrorPayload = 'NO_FACE_DETECTED';
-            }
-          } catch (err) {
-            console.error('[MyActivitiesPage] Lỗi phân tích khuôn mặt:', err);
-            faceErrorPayload = 'ANALYSIS_FAILED';
-          }
-        }
-
-        if (!descriptorPayload?.length) {
-          console.debug('[MyActivitiesPage] Không phát hiện khuôn mặt, sẽ gửi với faceError để chờ duyệt.', {
-            faceError: faceErrorPayload,
-          });
-          faceErrorPayload = faceErrorPayload || 'NO_FACE_DETECTED';
-        } else {
-          console.debug('[MyActivitiesPage] Chuẩn bị gửi điểm danh với descriptor khuôn mặt.', {
-            descriptorLength: descriptorPayload.length,
-          });
-        }
-      }
-
-      return attendanceMutation.mutateAsync({
-        id: activity.id,
-        payload: {
-          status: 'present',
-          phase,
-          evidence: evidenceDataUrl
-            ? {
-                data: evidenceDataUrl,
-                mimeType: file?.type || 'image/jpeg',
-                fileName: file?.name || `attendance_${Date.now()}.jpg`,
-              }
-            : undefined,
-          ...(descriptorPayload ? { faceDescriptor: descriptorPayload } : {}),
-          ...(faceErrorPayload && !descriptorPayload ? { faceError: faceErrorPayload } : {}),
-        },
-      });
-    },
-    [attendanceMutation, toast],
-  );
-
-  const handleFeedback = useCallback(
-    async ({ activity, content, files }) => {
-      if (!activity?.id) return;
-      try {
-        const attachments = await uploadService.uploadMultipleFeedbackEvidence(files || [], {
-          userId,
-          activityId: activity.id,
-        });
-        await feedbackMutation.mutateAsync({ id: activity.id, content, attachments });
-      } catch (error) {
-        const message = error?.message || 'Không thể tải minh chứng. Vui lòng thử lại.';
-        toast({ message, variant: 'danger' });
-      }
-    },
-    [feedbackMutation, toast, userId],
   );
 
   const buildCards = useCallback(
@@ -350,11 +129,11 @@ function MyActivitiesPage() {
             onCancelRegister={handleCancel}
             onConfirmPresent={handleAttendance}
             onSendFeedback={handleFeedback}
-            attendanceLoading={attendanceMutation.isPending}
+            attendanceLoading={mutations.attendance.isPending}
           />
         );
       }),
-    [handleRegister, handleCancel, handleAttendance, handleFeedback, attendanceMutation.isPending],
+    [handleRegister, handleCancel, handleAttendance, handleFeedback, mutations.attendance],
   );
 
   const renderTabContent = useCallback(
@@ -464,85 +243,20 @@ function MyActivitiesPage() {
           </header>
 
           {/* Stats */}
-          <div className={cx('my-activities__stats')}>
-            <div className={`${cx('my-activities__stat-card')} ${cx('my-activities__stat-card--scores')}`}>
-              <div className={cx('my-activities__stat-card-row')}>
-                <div className={cx('my-activities__stat-card-info')}>
-                  <div className={cx('my-activities__stat-card-label')}>Điểm CTXH</div>
-                  <div className={cx('my-activities__stat-card-value')}>{stats.totalPoints}</div>
-                </div>
-                <div className={cx('my-activities__stat-card-icon')}>
-                  <FontAwesomeIcon icon={faTrophy} className={cx('my-activities__stat-card-icon-mark')} />
-                </div>
-              </div>
-            </div>
-
-            <div className={`${cx('my-activities__stat-card')} ${cx('my-activities__stat-card--total')}`}>
-              <div className={cx('my-activities__stat-card-row')}>
-                <div className={cx('my-activities__stat-card-info')}>
-                  <div className={cx('my-activities__stat-card-label')}>Tổng hoạt động</div>
-                  <div className={cx('my-activities__stat-card-value')}>{stats.totalActivities}</div>
-                </div>
-                <div className={cx('my-activities__stat-card-icon')}>
-                  <FontAwesomeIcon icon={faCalendarCheck} className={cx('my-activities__stat-card-icon-mark')} />
-                </div>
-              </div>
-            </div>
-
-            <div className={`${cx('my-activities__stat-card')} ${cx('my-activities__stat-card--completed')}`}>
-              <div className={cx('my-activities__stat-card-row')}>
-                <div className={cx('my-activities__stat-card-info')}>
-                  <div className={cx('my-activities__stat-card-label')}>Đã tham gia</div>
-                  <div className={cx('my-activities__stat-card-value')}>{stats.completed}</div>
-                </div>
-                <div className={cx('my-activities__stat-card-icon')}>
-                  <FontAwesomeIcon icon={faCircleCheck} className={cx('my-activities__stat-card-icon-mark')} />
-                </div>
-              </div>
-            </div>
-
-            <div className={`${cx('my-activities__stat-card')} ${cx('my-activities__stat-card--absent')}`}>
-              <div className={cx('my-activities__stat-card-row')}>
-                <div className={cx('my-activities__stat-card-info')}>
-                  <div className={cx('my-activities__stat-card-label')}>Vắng mặt</div>
-                  <div className={cx('my-activities__stat-card-value')}>{stats.absent.length}</div>
-                </div>
-                <div className={cx('my-activities__stat-card-icon')}>
-                  <FontAwesomeIcon icon={faUserXmark} className={cx('my-activities__stat-card-icon-mark')} />
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Stats Cards */}
+          <ActivityStatsCards
+            totalPoints={stats.totalPoints}
+            totalActivities={stats.totalActivities}
+            completed={stats.completed}
+            absent={stats.absent.length}
+            isLoading={isFetching && registrations.length === 0}
+          />
 
           {/* Calendar */}
-          <div className={cx('my-activities__calendar')}>
-            <h3 className={cx('my-activities__calendar-title')}>Lịch hoạt động sắp tới</h3>
-            <Calendar
-              fullscreen={false}
-              fullCellRender={fullCellRender}
-              className={cx('my-activities__calendar-panel')}
-            />
-
-            {/* Legend */}
-            <div className={cx('my-activities__legend')}>
-              <div className={cx('my-activities__legend-item')}>
-                <span className={cx('my-activities__legend-dot', 'my-activities__legend-dot--primary')} />
-                <span>Đã đăng ký</span>
-              </div>
-              <div className={cx('my-activities__legend-item')}>
-                <span className={cx('my-activities__legend-dot', 'my-activities__legend-dot--success')} />
-                <span>Đã tham gia</span>
-              </div>
-              <div className={cx('my-activities__legend-item')}>
-                <span className={cx('my-activities__legend-dot', 'my-activities__legend-dot--warning')} />
-                <span>Đã hủy</span>
-              </div>
-              <div className={cx('my-activities__legend-item')}>
-                <span className={cx('my-activities__legend-dot', 'my-activities__legend-dot--error')} />
-                <span>Vắng mặt</span>
-              </div>
-            </div>
-          </div>
+          <ActivityCalendar
+            registrations={filteredRegistrations}
+            isLoading={isFetching && registrations.length === 0}
+          />
 
           {/* Tabs */}
           <div className={cx('my-activities__tabs')}>
@@ -559,40 +273,17 @@ function MyActivitiesPage() {
                     <RenderedTabBar {...props} />
 
                     {/* Thanh tìm kiếm */}
-                    <div className={cx('my-activities__search')}>
-                      <Input
-                        placeholder="Nhập từ khóa"
-                        size="large"
-                        className={cx('my-activities__search-input')}
-                        allowClear
-                        value={keyword}
-                        onChange={(event) => setKeyword(event.target.value)}
-                      />
-
-                      <RangePicker
-                        value={timeRange}
-                        onChange={setTimeRange}
-                        allowClear
-                        size="large"
-                        format="DD/MM/YYYY"
-                        className={cx('my-activities__search-range')}
-                        placeholder={['Từ ngày', 'Đến ngày']}
-                      />
-
-                      <Button
-                        type="primary"
-                        size="large"
-                        className={cx('my-activities__reset-button')}
-                        icon={<FontAwesomeIcon icon={faArrowRotateRight} />}
-                        onClick={() => {
-                          resetFilters();
-                          refetch();
-                        }}
-                        loading={isFetching}
-                      >
-                        Đặt lại
-                      </Button>
-                    </div>
+                    <ActivityFilters
+                      keyword={keyword}
+                      onKeywordChange={setKeyword}
+                      timeRange={timeRange}
+                      onTimeRangeChange={setTimeRange}
+                      onReset={() => {
+                        resetFilters();
+                        refetch();
+                      }}
+                      isRefetching={isFetching}
+                    />
 
                     <div className={cx('my-activities__title')}>Danh sách hoạt động</div>
                   </>

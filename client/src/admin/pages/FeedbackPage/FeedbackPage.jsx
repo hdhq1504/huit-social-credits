@@ -2,13 +2,10 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames/bind';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Avatar, Button, ConfigProvider, Empty, Input, Modal, Pagination, Select, Tag, Tooltip } from 'antd';
+import { Avatar, Button, ConfigProvider, Empty, Input, Pagination, Tag, Tooltip } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faArrowRotateRight,
-  faCalendarDay,
   faCircleCheck,
-  faCircleDot,
   faCircleXmark,
   faEye,
   faFileLines,
@@ -22,31 +19,18 @@ import { ADMIN_DASHBOARD_QUERY_KEY } from '@/api/stats.api';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
 import useToast from '@/components/Toast/Toast';
-import useDebounce from '@/hooks/useDebounce';
-import { formatDate, formatDateTime } from '@/utils/datetime';
+import useTable from '@/hooks/useTable';
+import useModal from '@/hooks/useModal';
+import BaseModal from '@/components/BaseModal/BaseModal';
+import { formatDateTime } from '@/utils/datetime';
+
+// Sub-components
+import { FeedbackFilters, FeedbackStatsCards } from './components';
+import { buildStatusTag, formatNumber } from './feedbackUtils';
+
 import styles from './FeedbackPage.module.scss';
 
 const cx = classNames.bind(styles);
-const STATUS_META = {
-  CHO_DUYET: { label: 'Chờ duyệt', className: 'feedback-page__status-tag--pending' },
-  DA_DUYET: { label: 'Đã duyệt', className: 'feedback-page__status-tag--approved' },
-  BI_TU_CHOI: { label: 'Từ chối', className: 'feedback-page__status-tag--rejected' },
-};
-
-const buildStatusTag = (status, label = '') => {
-  const meta = STATUS_META[status] || STATUS_META.CHO_DUYET;
-  return (
-    <Tag className={cx('feedback-page__status-tag', meta.className)}>
-      <FontAwesomeIcon icon={faCircleDot} className={cx('feedback-page__status-dot')} />
-      {label || meta.label}
-    </Tag>
-  );
-};
-
-const formatNumber = (value, placeholder = '--') => {
-  if (value === undefined || value === null) return placeholder;
-  return Number.isFinite(Number(value)) ? Number(value).toLocaleString('vi-VN') : value;
-};
 
 function FeedbackPage() {
   const navigate = useNavigate();
@@ -54,19 +38,13 @@ function FeedbackPage() {
   const { setBreadcrumbs, setPageActions } = useContext(AdminPageContext);
   const { contextHolder, open: openToast } = useToast();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFaculty, setSelectedFaculty] = useState();
-  const [selectedClass, setSelectedClass] = useState();
-  const [selectedActivity, setSelectedActivity] = useState();
-  const [selectedStatus, setSelectedStatus] = useState();
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [decisionModal, setDecisionModal] = useState({ open: false, status: null });
+  // Table state management with hooks
+  const table = useTable({ initialPageSize: 10, debounceDelay: 400 });
+  const decisionModal = useModal();
   const [rejectReason, setRejectReason] = useState('');
 
-  const debouncedSearch = useDebounce(searchTerm, 400);
-  const selectedCount = selectedRowKeys.length;
-  const isDecisionReject = decisionModal.status === 'BI_TU_CHOI';
+  const selectedCount = table.selection.selectedKeys.length;
+  const isDecisionReject = decisionModal.data?.status === 'BI_TU_CHOI';
 
   useEffect(() => {
     setBreadcrumbs([
@@ -84,16 +62,17 @@ function FeedbackPage() {
     () => [
       FEEDBACK_LIST_QUERY_KEY,
       {
-        page: pagination.current,
-        pageSize: pagination.pageSize,
-        search: debouncedSearch,
-        faculty: selectedFaculty,
-        class: selectedClass,
-        activityId: selectedActivity,
-        status: selectedStatus,
+        page: table.pagination.current,
+        pageSize: table.pagination.pageSize,
+        search: table.filters.debouncedSearch,
+        faculty: table.filters.customFilters.faculty,
+        class: table.filters.customFilters.class,
+        activityId: table.filters.customFilters.activityId,
+        status: table.filters.customFilters.status,
       },
     ],
-    [pagination, debouncedSearch, selectedFaculty, selectedClass, selectedActivity, selectedStatus],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [table.pagination.current, table.pagination.pageSize, table.filters.debouncedSearch, table.filters.customFilters],
   );
 
   const { data, isFetching, isLoading } = useQuery({
@@ -116,10 +95,11 @@ function FeedbackPage() {
 
   useEffect(() => {
     if (!feedbacks.length) {
-      setSelectedRowKeys([]);
+      table.selection.clearSelection();
       return;
     }
-    setSelectedRowKeys((prev) => prev.filter((key) => feedbacks.some((item) => item.id === key)));
+    table.selection.setSelectedKeys((prev) => prev.filter((key) => feedbacks.some((item) => item.id === key)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedbacks]);
 
   const decideMutation = useMutation({
@@ -131,7 +111,7 @@ function FeedbackPage() {
       });
       queryClient.invalidateQueries({ queryKey: FEEDBACK_LIST_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ADMIN_DASHBOARD_QUERY_KEY });
-      setSelectedRowKeys([]);
+      table.selection.clearSelection();
     },
     onError: (error) => {
       openToast({
@@ -140,50 +120,39 @@ function FeedbackPage() {
       });
     },
     onSettled: () => {
-      setDecisionModal({ open: false, status: null });
+      decisionModal.close();
       setRejectReason('');
     },
   });
 
-  const handlePageChange = (page, pageSize) => {
-    setPagination({ current: page, pageSize });
-  };
-
   const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setSearch(event.target.value);
   };
 
-  const handleSelectChange = (setter) => (value) => {
-    setter(value || undefined);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+  const handleFilterChange = (filterKey, value) => {
+    table.filters.setCustomFilter(filterKey, value || undefined);
   };
 
   const handleResetFilters = () => {
-    setSearchTerm('');
-    setSelectedFaculty(undefined);
-    setSelectedClass(undefined);
-    setSelectedActivity(undefined);
-    setSelectedStatus(undefined);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.resetFilters();
   };
 
   const openDecisionModal = useCallback(
     (status) => {
-      if (!selectedRowKeys.length) return;
-      setDecisionModal({ open: true, status });
+      if (!table.selection.selectedKeys.length) return;
+      decisionModal.open({ status });
       setRejectReason('');
     },
-    [selectedRowKeys.length],
+    [decisionModal, table.selection.selectedKeys.length],
   );
 
   const handleConfirmDecision = async () => {
-    if (!decisionModal.status || !selectedRowKeys.length) return;
+    if (!decisionModal.data?.status || !table.selection.selectedKeys.length) return;
 
     const payload = {
-      ids: selectedRowKeys,
-      status: decisionModal.status,
-      ...(decisionModal.status === 'BI_TU_CHOI' ? { reason: rejectReason } : {}),
+      ids: table.selection.selectedKeys,
+      status: decisionModal.data.status,
+      ...(decisionModal.data.status === 'BI_TU_CHOI' ? { reason: rejectReason } : {}),
     };
 
     await decideMutation.mutateAsync(payload);
@@ -191,19 +160,8 @@ function FeedbackPage() {
 
   const columns = useMemo(
     () => [
-      {
-        title: 'STT',
-        dataIndex: 'index',
-        key: 'index',
-        width: 70,
-        align: 'center',
-      },
-      {
-        title: 'Họ tên',
-        dataIndex: ['student', 'name'],
-        key: 'student',
-        width: 260,
-      },
+      { title: 'STT', dataIndex: 'index', key: 'index', width: 70, align: 'center' },
+      { title: 'Họ tên', dataIndex: ['student', 'name'], key: 'student', width: 260 },
       {
         title: 'MSSV',
         dataIndex: ['student', 'studentCode'],
@@ -215,97 +173,78 @@ function FeedbackPage() {
         title: 'Khoa',
         dataIndex: ['student', 'faculty'],
         key: 'faculty',
-        width: 180,
+        width: 200,
         sorter: (a, b) => (a.student?.faculty || '').localeCompare(b.student?.faculty || ''),
       },
       {
         title: 'Lớp',
         dataIndex: ['student', 'className'],
         key: 'className',
-        width: 130,
+        width: 150,
         sorter: (a, b) => (a.student?.className || '').localeCompare(b.student?.className || ''),
       },
       {
         title: 'Hoạt động',
         dataIndex: ['activity', 'title'],
         key: 'activity',
-        width: 320,
+        width: 250,
         sorter: (a, b) => (a.activity?.title || '').localeCompare(b.activity?.title || ''),
       },
       {
-        title: 'Ngày gửi',
+        title: 'Ngày nộp',
         dataIndex: 'submittedAt',
         key: 'submittedAt',
-        width: 170,
+        width: 150,
         sorter: (a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0),
       },
-      {
-        title: 'Trạng thái',
-        dataIndex: 'status',
-        key: 'status',
-        width: 150,
-        align: 'center',
-        sorter: (a, b) => (a.status || '').localeCompare(b.status || ''),
-      },
-      {
-        title: 'Hành động',
-        key: 'actions',
-        width: 110,
-        align: 'center',
-      },
+      { title: 'Trạng thái', dataIndex: 'status', key: 'status', width: 120 },
+      { title: 'Hành động', dataIndex: 'actions', key: 'actions', width: 100, fixed: 'right' },
     ],
     [],
   );
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
-      student: ({ record }) => {
-        const student = record.student || {};
-        return (
-          <div className={cx('feedback-page__student')}>
-            <Avatar src={student.avatarUrl} alt={student.name} className={cx('feedback-page__student-avatar')}>
-              {student.name?.[0] ?? '?'}
-            </Avatar>
-            <div className={cx('feedback-page__student-details')}>
-              <strong>{student.name || '--'}</strong>
-              <p>{student.email || '—'}</p>
-            </div>
+      index: ({ index }) => index,
+      student: ({ record }) => (
+        <div className={cx('feedback-page__student-cell')}>
+          <Avatar src={record.student?.avatarUrl} size={36} className={cx('feedback-page__avatar')}>
+            {record.student?.name?.charAt(0)}
+          </Avatar>
+          <div>
+            <div className={cx('feedback-page__student-name')}>{record.student?.name}</div>
+            <div className={cx('feedback-page__student-email')}>{record.student?.email}</div>
           </div>
-        );
-      },
-      studentCode: ({ record }) => record.student?.studentCode || '--',
-      faculty: ({ record }) => record.student?.faculty || '--',
-      className: ({ record }) => record.student?.className || '--',
-      activity: ({ record }) => {
-        const activity = record.activity || {};
-        return (
-          <div className={cx('feedback-page__activity')}>
-            <strong>{activity.title || '--'}</strong>
-            <p>
-              <FontAwesomeIcon icon={faCalendarDay} /> {formatDate(activity.startTime)}
-            </p>
-          </div>
-        );
-      },
-      submittedAt: ({ value }) => formatDateTime(value),
-      status: ({ record }) => buildStatusTag(record.status, record.statusLabel),
-      actions: ({ record }) => (
-        <Tooltip title="Xem chi tiết">
-          <button
-            type="button"
-            className={cx('feedback-page__action-button')}
-            onClick={(event) => {
-              event.stopPropagation();
-              navigate(buildPath.adminFeedbackDetail(record.id));
-            }}
-          >
-            <FontAwesomeIcon icon={faEye} />
-          </button>
+        </div>
+      ),
+      studentCode: ({ record }) => record.student?.studentCode,
+      faculty: ({ record }) => record.student?.faculty,
+      className: ({ record }) => record.student?.className,
+      activity: ({ record }) => (
+        <Tooltip title={record.activity?.title}>
+          <span className={cx('feedback-page__activity-link')}>{record.activity?.title}</span>
         </Tooltip>
       ),
+      submittedAt: ({ value }) => formatDateTime(value),
+      status: ({ record }) => buildStatusTag(record.status),
+      actions: ({ record }) => (
+        <div className={cx('feedback-page__actions')}>
+          <Tooltip title="Xem chi tiết">
+            <button
+              type="button"
+              className={cx('feedback-page__action-button')}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(buildPath.adminFeedbackDetail(record.id));
+              }}
+            >
+              <FontAwesomeIcon icon={faEye} />
+            </button>
+          </Tooltip>
+        </div>
+      ),
     }),
-    [navigate, pagination],
+    [navigate],
   );
 
   const statsCards = useMemo(
@@ -347,8 +286,8 @@ function FeedbackPage() {
   );
 
   const rowSelection = {
-    selectedRowKeys,
-    onChange: setSelectedRowKeys,
+    selectedRowKeys: table.selection.selectedKeys,
+    onChange: table.selection.setSelectedKeys,
     getCheckboxProps: (record) => ({
       disabled: record.status !== 'CHO_DUYET',
     }),
@@ -371,71 +310,16 @@ function FeedbackPage() {
       {contextHolder}
 
       <div className={cx('feedback-page')}>
-        <section className={cx('feedback-page__stats')}>
-          {statsCards.map((item) => (
-            <div key={item.key} className={cx('feedback-page__stats-card')}>
-              <div className={cx('feedback-page__stats-info')}>
-                <p className={cx('feedback-page__stats-label')}>{item.label}</p>
-                <h2 className={cx('feedback-page__stats-value')} style={{ color: item.color }}>
-                  {item.value}
-                </h2>
-              </div>
-              <div className={cx('feedback-page__stats-icon')} style={{ backgroundColor: item.bg }}>
-                <FontAwesomeIcon icon={item.icon} size="lg" color={item.color} />
-              </div>
-            </div>
-          ))}
-        </section>
+        <FeedbackStatsCards statsCards={statsCards} />
 
-        <div className={cx('feedback-page__filter-bar')}>
-          <Input
-            placeholder="Tìm kiếm hoạt động, sinh viên..."
-            className={cx('feedback-page__filter-search')}
-            value={searchTerm}
-            onChange={handleSearchChange}
-            allowClear
-          />
-          <Select
-            placeholder="Khoa"
-            className={cx('feedback-page__filter-select')}
-            allowClear
-            value={selectedFaculty}
-            options={filters.faculties || []}
-            optionFilterProp="label"
-            onChange={handleSelectChange(setSelectedFaculty)}
-          />
-          <Select
-            placeholder="Lớp"
-            className={cx('feedback-page__filter-select')}
-            allowClear
-            value={selectedClass}
-            options={filters.classes || []}
-            optionFilterProp="label"
-            onChange={handleSelectChange(setSelectedClass)}
-          />
-          <Select
-            placeholder="Hoạt động"
-            className={cx('feedback-page__filter-select')}
-            allowClear
-            showSearch
-            value={selectedActivity}
-            options={filters.activities || []}
-            optionFilterProp="label"
-            onChange={handleSelectChange(setSelectedActivity)}
-          />
-          <Select
-            placeholder="Trạng thái"
-            className={cx('feedback-page__filter-select')}
-            allowClear
-            value={selectedStatus}
-            options={filters.statuses || []}
-            optionFilterProp="label"
-            onChange={handleSelectChange(setSelectedStatus)}
-          />
-          <Button type="primary" icon={<FontAwesomeIcon icon={faArrowRotateRight} />} onClick={handleResetFilters}>
-            Đặt lại
-          </Button>
-        </div>
+        <FeedbackFilters
+          searchValue={table.filters.search}
+          onSearchChange={handleSearchChange}
+          customFilters={table.filters.customFilters}
+          onFilterChange={handleFilterChange}
+          onResetFilters={handleResetFilters}
+          filterOptions={filters}
+        />
 
         <div className={cx('feedback-page__content')}>
           <div className={cx('feedback-page__content-header')}>
@@ -466,10 +350,10 @@ function FeedbackPage() {
               Đã chọn <strong>{selectedCount}</strong> trong <strong>{formatNumber(totalItems, 0)}</strong> phản hồi
             </div>
             <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
+              current={table.pagination.current}
+              pageSize={table.pagination.pageSize}
               total={totalItems}
-              onChange={handlePageChange}
+              onChange={table.pagination.onChange}
               showSizeChanger={false}
             />
           </div>
@@ -481,7 +365,7 @@ function FeedbackPage() {
               <strong>{selectedCount}</strong> sinh viên đã chọn
             </div>
             <div className={cx('feedback-page__bulk-buttons')}>
-              <Button onClick={() => setSelectedRowKeys([])}>Bỏ chọn tất cả</Button>
+              <Button onClick={() => table.selection.clearSelection()}>Bỏ chọn tất cả</Button>
               <Button type="primary" onClick={() => openDecisionModal('DA_DUYET')} loading={decideMutation.isPending}>
                 Duyệt đạt
               </Button>
@@ -493,19 +377,35 @@ function FeedbackPage() {
         )}
       </div>
 
-      <Modal
-        open={decisionModal.open}
-        title={decisionModal.status === 'DA_DUYET' ? 'Xác nhận duyệt phản hồi' : 'Từ chối phản hồi'}
-        okText={decisionModal.status === 'DA_DUYET' ? 'Duyệt đạt' : 'Từ chối'}
-        cancelText="Hủy"
-        onCancel={() => {
-          setDecisionModal({ open: false, status: null });
+      <BaseModal
+        isOpen={decisionModal.isOpen}
+        title={decisionModal.data?.status === 'DA_DUYET' ? 'Xác nhận duyệt phản hồi' : 'Từ chối phản hồi'}
+        onClose={() => {
+          decisionModal.close();
           setRejectReason('');
         }}
-        onOk={handleConfirmDecision}
-        okButtonProps={{ disabled: !canConfirm, loading: decideMutation.isPending }}
-        cancelButtonProps={{ disabled: decideMutation.isPending }}
-        destroyOnClose
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button
+              onClick={() => {
+                decisionModal.close();
+                setRejectReason('');
+              }}
+              disabled={decideMutation.isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="primary"
+              onClick={handleConfirmDecision}
+              disabled={!canConfirm}
+              loading={decideMutation.isPending}
+              danger={isDecisionReject}
+            >
+              {decisionModal.data?.status === 'DA_DUYET' ? 'Duyệt đạt' : 'Từ chối'}
+            </Button>
+          </div>
+        }
       >
         {isDecisionReject ? (
           <div className={cx('feedback-page__decision-body')}>
@@ -525,7 +425,7 @@ function FeedbackPage() {
             Bạn có chắc muốn duyệt <strong>{selectedCount}</strong> phản hồi đã chọn?
           </p>
         )}
-      </Modal>
+      </BaseModal>
     </ConfigProvider>
   );
 }

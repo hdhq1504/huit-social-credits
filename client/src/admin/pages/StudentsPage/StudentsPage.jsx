@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import classNames from 'classnames/bind';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Avatar, Button, Input, Modal, Pagination, Select, Tag, Tooltip } from 'antd';
+import { Avatar, Button, Input, Pagination, Select, Tag, Tooltip } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCircleDot,
@@ -16,10 +16,12 @@ import {
 import dayjs from 'dayjs';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
 import studentsApi, { STUDENTS_QUERY_KEY } from '@/api/students.api';
-import useDebounce from '@/hooks/useDebounce';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
 import useToast from '@/components/Toast/Toast';
+import useTable from '@/hooks/useTable';
+import useConfirmDialog from '@/hooks/useConfirmDialog';
+import ConfirmModal from '@/components/ConfirmModal/ConfirmModal';
 import styles from './StudentsPage.module.scss';
 
 const cx = classNames.bind(styles);
@@ -54,12 +56,14 @@ export default function StudentsPage() {
   const queryClient = useQueryClient();
   const { setPageActions, setBreadcrumbs } = useContext(AdminPageContext);
   const { contextHolder, open: openToast } = useToast();
-  const [searchValue, setSearchValue] = useState('');
+
+  // Table state management
+  const table = useTable({ initialPageSize: 10, debounceDelay: 400 });
+
+  // Custom filter states
   const [statusValue, setStatusValue] = useState('all');
   const [facultyValue, setFacultyValue] = useState('all');
   const [classValue, setClassValue] = useState('all');
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const debouncedSearch = useDebounce(searchValue, 400);
 
   const { data: facultiesData } = useQuery({
     queryKey: ['admin', 'faculties'],
@@ -107,15 +111,15 @@ export default function StudentsPage() {
     () => [
       STUDENTS_QUERY_KEY,
       {
-        page: pagination.current,
-        pageSize: pagination.pageSize,
-        search: debouncedSearch.trim(),
+        page: table.pagination.current,
+        pageSize: table.pagination.pageSize,
+        search: table.filters.debouncedSearch.trim(),
         status: statusValue,
         khoaId: facultyValue !== 'all' ? facultyValue : undefined,
         lopId: classValue !== 'all' ? classValue : undefined,
       },
     ],
-    [pagination, debouncedSearch, statusValue, facultyValue, classValue],
+    [table.pagination, table.filters.debouncedSearch, statusValue, facultyValue, classValue],
   );
 
   const { data, isFetching } = useQuery({
@@ -135,6 +139,13 @@ export default function StudentsPage() {
     },
   });
 
+  // Delete confirmation dialog
+  const deleteDialog = useConfirmDialog({
+    onConfirm: async (student) => {
+      await deleteStudentMutation.mutateAsync(student.id);
+    },
+  });
+
   const students = data?.students ?? [];
   const totalItems = data?.pagination?.total ?? 0;
 
@@ -148,22 +159,9 @@ export default function StudentsPage() {
   const handleDeleteStudent = useCallback(
     (record) => {
       if (!record?.id) return;
-      const displayName = record.fullName || record.studentCode || 'sinh viên này';
-      Modal.confirm({
-        title: 'Xóa sinh viên',
-        content: (
-          <span>
-            Bạn có chắc chắn muốn xóa <strong>{displayName}</strong> khỏi hệ thống?
-          </span>
-        ),
-        okText: 'Xóa',
-        cancelText: 'Hủy',
-        okButtonProps: { danger: true },
-        centered: true,
-        onOk: () => deleteStudentMutation.mutateAsync(record.id),
-      });
+      deleteDialog.open(record);
     },
-    [deleteStudentMutation],
+    [deleteDialog],
   );
 
   const renderSortIcon = useCallback(
@@ -176,39 +174,31 @@ export default function StudentsPage() {
     [],
   );
 
-  const isDeleting = deleteStudentMutation.isLoading;
+  const isDeleting = deleteStudentMutation.isPending;
 
   const handleResetFilters = () => {
-    setSearchValue('');
+    table.filters.setSearch('');
     setStatusValue('all');
     setFacultyValue('all');
     setClassValue('all');
-    setPagination((prev) => ({ current: 1, pageSize: prev.pageSize }));
+    table.resetPagination();
   };
 
   const handleSearchChange = (event) => {
-    setSearchValue(event.target.value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
+    table.filters.setSearch(event.target.value);
   };
 
   const handleStatusChange = (value) => {
     setStatusValue(value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const handleFacultyChange = (value) => {
     setFacultyValue(value);
     setClassValue('all');
-    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const handleClassChange = (value) => {
     setClassValue(value);
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  };
-
-  const handlePageChange = (page, pageSize) => {
-    setPagination({ current: page, pageSize });
   };
 
   const columns = useMemo(
@@ -274,7 +264,7 @@ export default function StudentsPage() {
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      index: ({ index }) => (table.pagination.current - 1) * table.pagination.pageSize + index + 1,
       fullName: ({ record }) => (
         <div className={cx('students-page__user-cell')}>
           <Avatar size={40} src={record.avatarUrl} className={cx('students-page__avatar')}>
@@ -321,11 +311,11 @@ export default function StudentsPage() {
         </div>
       ),
     }),
-    [handleDeleteStudent, handleEditStudent, isDeleting, pagination],
+    [handleDeleteStudent, handleEditStudent, isDeleting, table.pagination],
   );
 
   const hasStudents = students.length > 0;
-  const startIndex = hasStudents ? (pagination.current - 1) * pagination.pageSize + 1 : 0;
+  const startIndex = hasStudents ? (table.pagination.current - 1) * table.pagination.pageSize + 1 : 0;
   const endIndex = hasStudents ? startIndex + students.length - 1 : 0;
 
   return (
@@ -336,7 +326,7 @@ export default function StudentsPage() {
           <Input
             size="large"
             allowClear
-            value={searchValue}
+            value={table.filters.search}
             onChange={handleSearchChange}
             placeholder="Tìm kiếm sinh viên..."
             prefix={<FontAwesomeIcon icon={faSearch} />}
@@ -406,15 +396,28 @@ export default function StudentsPage() {
                 : 'Không có sinh viên'}
             </div>
             <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
+              current={table.pagination.current}
+              pageSize={table.pagination.pageSize}
               total={totalItems}
-              onChange={handlePageChange}
+              onChange={table.pagination.onChange}
               showSizeChanger={false}
             />
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteDialog.isOpen}
+        onConfirm={deleteDialog.confirm}
+        onCancel={deleteDialog.close}
+        isLoading={deleteDialog.isLoading}
+        title="Xóa sinh viên"
+        message={`Bạn có chắc chắn muốn xóa ${deleteDialog.data?.fullName || deleteDialog.data?.studentCode || 'sinh viên này'} khỏi hệ thống?`}
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+      />
     </>
   );
 }

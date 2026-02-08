@@ -1,7 +1,7 @@
-import React, { useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useContext, useEffect, useMemo, useCallback } from 'react';
 import classNames from 'classnames/bind';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Form, Input, DatePicker, message, Popconfirm, Tag, Collapse, Tooltip } from 'antd';
+import { Button, Form, Input, DatePicker, message, Popconfirm, Tag, Collapse, Tooltip, Modal } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faEdit, faTrash, faCheck } from '@fortawesome/free-solid-svg-icons';
 import dayjs from 'dayjs';
@@ -9,6 +9,10 @@ import academicApi from '@/api/academic.api';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
 import { ROUTE_PATHS } from '@/config/routes.config';
+import useTable from '@/hooks/useTable';
+import useModal from '@/hooks/useModal';
+import BaseModal from '@/components/BaseModal/BaseModal';
+import { SemesterManagementModal } from './components';
 import styles from './AcademicYearsPage.module.scss';
 
 const cx = classNames.bind(styles);
@@ -18,12 +22,12 @@ const { Panel } = Collapse;
 export default function AcademicYearsPage() {
   const queryClient = useQueryClient();
   const { setPageActions, setBreadcrumbs } = useContext(AdminPageContext);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingYear, setEditingYear] = useState(null);
-  const [semesterModalOpen, setSemesterModalOpen] = useState(false);
-  const [selectedYearForSemesters, setSelectedYearForSemesters] = useState(null);
+
+  // Table and modal state management
+  const table = useTable({ initialPageSize: 10 });
+  const editModal = useModal();
+  const semesterModal = useModal();
   const [form] = Form.useForm();
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'academic-years'],
@@ -42,14 +46,14 @@ export default function AcademicYearsPage() {
         type: 'primary',
         className: 'admin-navbar__btn--primary',
         icon: <FontAwesomeIcon icon={faPlus} />,
-        onClick: () => setIsModalOpen(true),
+        onClick: () => editModal.open(),
       },
     ]);
     return () => {
       setBreadcrumbs(null);
       setPageActions(null);
     };
-  }, [setBreadcrumbs, setPageActions]);
+  }, [setBreadcrumbs, setPageActions, editModal]);
 
   const createMutation = useMutation({
     mutationFn: academicApi.createNamHoc,
@@ -100,7 +104,7 @@ export default function AcademicYearsPage() {
 
   const handleOpenModal = useCallback(
     (year = null) => {
-      setEditingYear(year);
+      editModal.open(year);
       if (year) {
         form.setFieldsValue({
           ma: year.ma,
@@ -111,16 +115,14 @@ export default function AcademicYearsPage() {
       } else {
         form.resetFields();
       }
-      setIsModalOpen(true);
     },
-    [form],
+    [editModal, form],
   );
 
   const handleCloseModal = useCallback(() => {
-    setIsModalOpen(false);
-    setEditingYear(null);
+    editModal.close();
     form.resetFields();
-  }, [form]);
+  }, [editModal, form]);
 
   const handleSubmit = async (values) => {
     const [batDau, ketThuc] = values.dateRange;
@@ -132,8 +134,8 @@ export default function AcademicYearsPage() {
       ketThuc: ketThuc.toISOString(),
     };
 
-    if (editingYear) {
-      updateMutation.mutate({ id: editingYear.id, data: payload });
+    if (editModal.data) {
+      updateMutation.mutate({ id: editModal.data.id, data: payload });
     } else {
       createMutation.mutate(payload, {
         onSuccess: async (response) => {
@@ -191,31 +193,18 @@ export default function AcademicYearsPage() {
     [activateMutation],
   );
 
-  const handleManageSemesters = useCallback((year) => {
-    setSelectedYearForSemesters(year);
-    setSemesterModalOpen(true);
-  }, []);
+  const handleManageSemesters = useCallback(
+    (year) => {
+      semesterModal.open(year);
+    },
+    [semesterModal],
+  );
 
   const columns = useMemo(
     () => [
-      {
-        title: 'Mã',
-        dataIndex: 'ma',
-        key: 'ma',
-        width: 100,
-      },
-      {
-        title: 'Niên khóa',
-        dataIndex: 'nienKhoa',
-        key: 'nienKhoa',
-        width: 150,
-      },
-      {
-        title: 'Tên năm học',
-        dataIndex: 'ten',
-        key: 'ten',
-        width: 200,
-      },
+      { title: 'Mã', dataIndex: 'ma', key: 'ma', width: 100 },
+      { title: 'Niên khóa', dataIndex: 'nienKhoa', key: 'nienKhoa', width: 150 },
+      { title: 'Tên năm học', dataIndex: 'ten', key: 'ten', width: 200 },
       {
         title: 'Thời gian',
         key: 'time',
@@ -238,19 +227,8 @@ export default function AcademicYearsPage() {
           </Button>
         ),
       },
-      {
-        title: 'Trạng thái',
-        dataIndex: 'isActive',
-        key: 'isActive',
-        width: 80,
-        align: 'center',
-      },
-      {
-        title: 'Hành động',
-        key: 'actions',
-        width: 200,
-        align: 'center',
-      },
+      { title: 'Trạng thái', dataIndex: 'isActive', key: 'isActive', width: 80, align: 'center' },
+      { title: 'Hành động', key: 'actions', width: 200, align: 'center' },
     ],
     [handleManageSemesters],
   );
@@ -307,7 +285,7 @@ export default function AcademicYearsPage() {
         </div>
       ),
     }),
-    [activateMutation.isLoading, deleteMutation.isLoading, handleActivate, handleDelete, handleOpenModal],
+    [handleActivate, handleDelete, handleOpenModal],
   );
 
   const namHocs = data?.namHocs || [];
@@ -328,24 +306,22 @@ export default function AcademicYearsPage() {
           loading={isLoading}
           columnRenderers={columnRenderers}
           pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
+            current: table.pagination.current,
+            pageSize: table.pagination.pageSize,
             total: namHocs.length,
-            onChange: (page, pageSize) => {
-              setPagination({ current: page, pageSize });
-            },
+            onChange: table.pagination.onChange,
             showSizeChanger: false,
           }}
           className={cx('academic-years-page__table')}
         />
       </div>
 
-      <Modal
-        title={editingYear ? 'Chỉnh sửa năm học' : 'Thêm năm học mới'}
-        open={isModalOpen}
-        onCancel={handleCloseModal}
+      <BaseModal
+        title={editModal.data ? 'Chỉnh sửa năm học' : 'Thêm năm học mới'}
+        isOpen={editModal.isOpen}
+        onClose={handleCloseModal}
         footer={null}
-        width={600}
+        size="md"
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item name="ma" label="Mã năm học" rules={[{ required: true, message: 'Vui lòng nhập mã năm học' }]}>
@@ -372,7 +348,7 @@ export default function AcademicYearsPage() {
             />
           </Form.Item>
 
-          {!editingYear && (
+          {!editModal.data && (
             <div style={{ marginBottom: 16, padding: 12, background: '#f0f9ff', borderRadius: 8 }}>
               <p style={{ margin: 0, fontSize: 14, color: '#0369a1' }}>
                 💡 Hệ thống sẽ tự động tạo 3 học kỳ cho năm học này
@@ -382,175 +358,21 @@ export default function AcademicYearsPage() {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={handleCloseModal}>Hủy</Button>
-            <Button type="primary" htmlType="submit" loading={createMutation.isLoading || updateMutation.isLoading}>
-              {editingYear ? 'Cập nhật' : 'Tạo mới'}
+            <Button type="primary" htmlType="submit" loading={createMutation.isPending || updateMutation.isPending}>
+              {editModal.data ? 'Cập nhật' : 'Tạo mới'}
             </Button>
           </div>
         </Form>
-      </Modal>
+      </BaseModal>
 
       <SemesterManagementModal
-        open={semesterModalOpen}
-        year={selectedYearForSemesters}
-        onClose={() => {
-          setSemesterModalOpen(false);
-          setSelectedYearForSemesters(null);
-        }}
+        open={semesterModal.isOpen}
+        year={semesterModal.data}
+        onClose={() => semesterModal.close()}
         onSuccess={() => {
           queryClient.invalidateQueries(['admin', 'academic-years']);
         }}
       />
     </div>
-  );
-}
-
-function SemesterManagementModal({ open, year, onClose, onSuccess }) {
-  const queryClient = useQueryClient();
-  const [editingSemester, setEditingSemester] = useState(null);
-  const [semesterForm] = Form.useForm();
-
-  const { data: semesters } = useQuery({
-    queryKey: ['admin', 'semesters', year?.id],
-    queryFn: () => academicApi.getHocKys(year.id),
-    enabled: !!year,
-  });
-
-  const createSemesterMutation = useMutation({
-    mutationFn: ({ namHocId, data }) => academicApi.createHocKy(namHocId, data),
-    onSuccess: () => {
-      message.success('Tạo học kỳ thành công');
-      queryClient.invalidateQueries(['admin', 'semesters', year?.id]);
-      queryClient.invalidateQueries(['admin', 'academic-years']);
-      setEditingSemester(null);
-      semesterForm.resetFields();
-      onSuccess?.();
-    },
-  });
-
-  const updateSemesterMutation = useMutation({
-    mutationFn: ({ id, data }) => academicApi.updateHocKy(id, data),
-    onSuccess: () => {
-      message.success('Cập nhật học kỳ thành công');
-      queryClient.invalidateQueries(['admin', 'semesters', year?.id]);
-      setEditingSemester(null);
-      semesterForm.resetFields();
-      onSuccess?.();
-    },
-  });
-
-  const deleteSemesterMutation = useMutation({
-    mutationFn: academicApi.deleteHocKy,
-    onSuccess: () => {
-      message.success('Xóa học kỳ thành công');
-      queryClient.invalidateQueries(['admin', 'semesters', year?.id]);
-      queryClient.invalidateQueries(['admin', 'academic-years']);
-      onSuccess?.();
-    },
-  });
-
-  const handleEditSemester = (semester) => {
-    setEditingSemester(semester);
-    semesterForm.setFieldsValue({
-      ma: semester.ma,
-      ten: semester.ten,
-      thuTu: semester.thuTu,
-      moTa: semester.moTa,
-      dateRange: [dayjs(semester.batDau), dayjs(semester.ketThuc)],
-    });
-  };
-
-  const handleSubmitSemester = (values) => {
-    const [batDau, ketThuc] = values.dateRange;
-    const payload = {
-      ma: values.ma,
-      ten: values.ten,
-      thuTu: values.thuTu,
-      moTa: values.moTa,
-      batDau: batDau.toISOString(),
-      ketThuc: ketThuc.toISOString(),
-    };
-
-    if (editingSemester) {
-      updateSemesterMutation.mutate({ id: editingSemester.id, data: payload });
-    } else {
-      createSemesterMutation.mutate({ namHocId: year.id, data: payload });
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingSemester(null);
-    semesterForm.resetFields();
-  };
-
-  return (
-    <Modal title={`Quản lý học kỳ - ${year?.nienKhoa}`} open={open} onCancel={onClose} footer={null} width={800}>
-      <div style={{ marginBottom: 16 }}>
-        {semesters?.map((semester) => (
-          <div
-            key={semester.id}
-            style={{ marginBottom: 12, padding: 16, border: '1px solid #f0f0f0', borderRadius: 8 }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h4 style={{ margin: 0 }}>{semester.ten}</h4>
-                <p style={{ margin: '4px 0', color: '#8c8c8c', fontSize: 14 }}>
-                  {dayjs(semester.batDau).format('DD/MM/YYYY')} - {dayjs(semester.ketThuc).format('DD/MM/YYYY')}
-                </p>
-              </div>
-              <div>
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<FontAwesomeIcon icon={faEdit} />}
-                  onClick={() => handleEditSemester(semester)}
-                >
-                  Sửa
-                </Button>
-                <Popconfirm
-                  title="Xóa học kỳ"
-                  description="Bạn có chắc chắn muốn xóa học kỳ này?"
-                  onConfirm={() => deleteSemesterMutation.mutate(semester.id)}
-                  okText="Xóa"
-                  cancelText="Hủy"
-                >
-                  <Button type="link" danger size="small" icon={<FontAwesomeIcon icon={faTrash} />}>
-                    Xóa
-                  </Button>
-                </Popconfirm>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {editingSemester && (
-        <div style={{ padding: 16, background: '#f5f5f5', borderRadius: 8, marginBottom: 16 }}>
-          <h4>Chỉnh sửa học kỳ</h4>
-          <Form form={semesterForm} layout="vertical" onFinish={handleSubmitSemester}>
-            <Form.Item name="ma" label="Mã học kỳ" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="ten" label="Tên học kỳ" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="thuTu" label="Thứ tự" rules={[{ required: true }]}>
-              <Input type="number" />
-            </Form.Item>
-            <Form.Item name="moTa" label="Mô tả">
-              <Input.TextArea rows={2} />
-            </Form.Item>
-            <Form.Item name="dateRange" label="Thời gian" rules={[{ required: true }]}>
-              <RangePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
-            </Form.Item>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button onClick={handleCancelEdit}>Hủy</Button>
-              <Button type="primary" htmlType="submit" loading={updateSemesterMutation.isLoading}>
-                Cập nhật
-              </Button>
-            </div>
-          </Form>
-        </div>
-      )}
-    </Modal>
   );
 }

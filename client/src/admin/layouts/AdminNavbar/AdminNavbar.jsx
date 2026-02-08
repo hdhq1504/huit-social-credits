@@ -51,7 +51,7 @@ function AdminNavbar({ pageTitle, actions, breadcrumbs }) {
   // Render Title động
   const renderTitle = () => {
     // Nếu có breadcrumb, title là mục cuối cùng, nếu không, dùng pageTitle
-    const title = breadcrumbs ? breadcrumbs[breadcrumbs.length - 1].label : pageTitle;
+    const title = breadcrumbs && breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].label : pageTitle;
     return <span className={cx('admin-navbar__title')}>{title}</span>;
   };
 

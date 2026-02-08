@@ -1,58 +1,39 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames/bind';
-import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/vi';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowRight,
-  faCalendar,
-  faCalendarCheck,
-  faComments,
-  faUsers,
-  faPlus,
-  faSpinner,
-  faCheck,
-  faPenToSquare,
-  faXmark,
-  faCircleCheck,
-  faClipboardCheck,
-} from '@fortawesome/free-solid-svg-icons';
+import { faArrowRight, faCalendar, faUsers, faPlus } from '@fortawesome/free-solid-svg-icons';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import { ROUTE_PATHS } from '@/config/routes.config';
-import activitiesApi, { DASHBOARD_QUERY_KEY } from '@/api/activities.api';
-import statsApi, { ADMIN_DASHBOARD_QUERY_KEY } from '@/api/stats.api';
 import { formatDateTime } from '@/utils/datetime';
+import { useDashboardStats } from '@/hooks/useDashboardStats.jsx';
+import DashboardStats from '@/admin/components/DashboardStats/DashboardStats.jsx';
+import RecentActivitiesTable from '@/admin/components/RecentActivitiesTable/RecentActivitiesTable.jsx';
 import styles from './DashboardPage.module.scss';
-import { useMemo } from 'react';
 
 const cx = classNames.bind(styles);
 dayjs.extend(relativeTime);
 dayjs.locale('vi');
-
-const formatPercentChange = (value) => {
-  if (value == null) return '0%';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value}%`;
-};
 
 export default function DashboardPage() {
   const [year, setYear] = useState(dayjs().year());
   const { setPageActions } = useContext(AdminPageContext);
   const navigate = useNavigate();
 
-  const { data: recentActivities, isLoading: isLoadingRecent } = useQuery({
-    queryKey: [DASHBOARD_QUERY_KEY, 'recent'],
-    queryFn: activitiesApi.getRecent,
-  });
-
-  const { data: dashboardData, isLoading: isLoadingDashboard } = useQuery({
-    queryKey: ADMIN_DASHBOARD_QUERY_KEY,
-    queryFn: statsApi.getAdminDashboard,
-  });
+  // Use custom hook for data fetching
+  const {
+    recentActivities,
+    dashboardData,
+    overviewCards,
+    upcomingActivities,
+    pendingFeedback,
+    isLoadingRecent,
+    isLoadingDashboard,
+  } = useDashboardStats();
 
   const availableYears = useMemo(() => {
     if (!dashboardData?.chart) return [];
@@ -81,46 +62,6 @@ export default function DashboardPage() {
     }));
   }, [dashboardData?.chart, year]);
 
-  const overviewCards = useMemo(() => {
-    const overview = dashboardData?.overview;
-    const baseCards = [
-      {
-        key: 'activities',
-        icon: <FontAwesomeIcon icon={faCalendarCheck} size={22} color="#fff" />,
-        count: overview?.activities?.total ?? 0,
-        label: 'Hoạt động CTXH',
-        percent: overview?.activities?.changePercent ?? 0,
-        color: 'blue',
-      },
-      {
-        key: 'participants',
-        icon: <FontAwesomeIcon icon={faUsers} size={22} color="#fff" />,
-        count: overview?.participants?.total ?? 0,
-        label: 'Sinh viên tham gia',
-        percent: overview?.participants?.changePercent ?? 0,
-        color: 'green',
-      },
-      {
-        key: 'feedbacks',
-        icon: <FontAwesomeIcon icon={faComments} size={22} color="#fff" />,
-        count: overview?.feedbacks?.total ?? 0,
-        label: 'Phản hồi chờ xử lý',
-        percent: overview?.feedbacks?.changePercent ?? 0,
-        color: 'purple',
-      },
-    ];
-
-    return baseCards.map(({ percent, ...card }) => ({
-      ...card,
-      count: isLoadingDashboard ? '--' : card.count,
-      badge: isLoadingDashboard ? '--' : formatPercentChange(percent),
-      negative: !isLoadingDashboard && percent < 0,
-    }));
-  }, [dashboardData?.overview, isLoadingDashboard]);
-
-  const upcomingActivities = dashboardData?.upcoming ?? [];
-  const pendingFeedback = dashboardData?.feedbacks ?? [];
-
   useEffect(() => {
     setPageActions([
       {
@@ -136,165 +77,10 @@ export default function DashboardPage() {
     return () => setPageActions(null);
   }, [setPageActions, navigate]);
 
-  const renderRecentActivities = () => {
-    if (isLoadingRecent) {
-      return (
-        <li className={cx('dashboard__recent-item')} style={{ justifyContent: 'center' }}>
-          <FontAwesomeIcon icon={faSpinner} spin />
-          <span style={{ marginLeft: 8 }}>Đang tải...</span>
-        </li>
-      );
-    }
-
-    if (!recentActivities || recentActivities.length === 0) {
-      return <li className={cx('dashboard__recent-item')}>Không có hoạt động gần đây.</li>;
-    }
-
-    const getIconForActivity = (activity) => {
-      const type = activity.type || 'CREATED';
-
-      switch (type) {
-        case 'COMPLETED':
-          return {
-            icon: faCheck,
-            className: 'dashboard__recent-icon-wrapper--complete',
-          };
-        case 'REGISTERED':
-          return {
-            icon: faUsers,
-            className: 'dashboard__recent-icon-wrapper--register',
-          };
-        case 'UPDATED':
-          return {
-            icon: faPenToSquare,
-            className: 'dashboard__recent-icon-wrapper--update',
-          };
-        case 'CANCELLED':
-          return {
-            icon: faXmark,
-            className: 'dashboard__recent-icon-wrapper--cancel',
-          };
-        case 'APPROVED':
-          return {
-            icon: faCircleCheck,
-            className: 'dashboard__recent-icon-wrapper--approved',
-          };
-        case 'FEEDBACK_RECEIVED':
-          return {
-            icon: faComments,
-            className: 'dashboard__recent-icon-wrapper--feedback',
-          };
-        case 'ATTENDANCE_CHECKED':
-          return {
-            icon: faClipboardCheck,
-            className: 'dashboard__recent-icon-wrapper--attendance',
-          };
-        case 'CREATED':
-        default:
-          return {
-            icon: faPlus,
-            className: 'dashboard__recent-icon-wrapper--create',
-          };
-      }
-    };
-
-    const mappedActivities = recentActivities.map((activity) => {
-      const iconInfo = getIconForActivity(activity);
-
-      let title = '';
-      let desc = '';
-
-      const activityTitle = activity.title || 'Hoạt động';
-      const maxCapacity = activity.maxCapacity || 0;
-      const currentParticipants = activity.participantsCount || 0;
-      const organizer = activity.organizer || 'Hệ thống';
-
-      switch (activity.type) {
-        case 'COMPLETED':
-          title = `Hoạt động "${activityTitle}"`;
-          desc = `${currentParticipants} sinh viên đã tham gia thành công.`;
-          break;
-        case 'REGISTERED':
-          title = `${currentParticipants} sinh viên mới đăng ký tham...`;
-          desc = `Hoạt động "${activityTitle}" có thêm ${currentParticipants} người đăng ký.`;
-          break;
-        case 'UPDATED':
-          title = `Cập nhật hoạt động "${activityTitle}"`;
-          desc = `${organizer} đã chỉnh sửa thông tin hoạt động.`;
-          break;
-        case 'CANCELLED':
-          title = `Hủy hoạt động "${activityTitle}"`;
-          desc = `Hoạt động đã bị hủy bởi ${organizer}.`;
-          break;
-        case 'APPROVED':
-          title = `Phê duyệt hoạt động "${activityTitle}"`;
-          desc = `${organizer} đã phê duyệt hoạt động này.`;
-          break;
-        case 'FEEDBACK_RECEIVED':
-          title = `Nhận phản hồi mới cho "${activityTitle}"`;
-          desc = `${currentParticipants} sinh viên đã gửi phản hồi.`;
-          break;
-        case 'ATTENDANCE_CHECKED':
-          title = `Điểm danh hoạt động "${activityTitle}"`;
-          desc = `${currentParticipants} sinh viên đã được điểm danh.`;
-          break;
-        case 'CREATED':
-        default:
-          title = `Tạo hoạt động mới "${activityTitle}"`;
-          desc = maxCapacity
-            ? `${organizer} tạo hoạt động mới với sức chứa ${maxCapacity} người.`
-            : `${organizer} tạo hoạt động mới.`;
-          break;
-      }
-
-      return {
-        id: activity.id,
-        icon: iconInfo.icon,
-        iconClassName: iconInfo.className,
-        title,
-        desc,
-        time: activity.createdAt ? dayjs(activity.createdAt).fromNow() : 'Vừa xong',
-      };
-    });
-
-    return mappedActivities.map((item) => (
-      <li key={item.id} className={cx('dashboard__recent-item')}>
-        <div className={cx('dashboard__recent-icon-wrapper', item.iconClassName)}>
-          <FontAwesomeIcon icon={item.icon} />
-        </div>
-
-        <div className={cx('dashboard__recent-content')}>
-          <div className={cx('dashboard__recent-top')}>
-            <strong className={cx('dashboard__recent-title', 'dashboard__truncate')}>{item.title}</strong>
-            <span className={cx('dashboard__recent-time')}>{item.time}</span>
-          </div>
-          <p className={cx('dashboard__recent-desc', 'dashboard__truncate')}>{item.desc}</p>
-        </div>
-      </li>
-    ));
-  };
-
   return (
     <div className={cx('dashboard')}>
-      <section className={cx('dashboard__stats')}>
-        {overviewCards.map((item) => (
-          <div key={item.key} className={cx('dashboard__stat-card')}>
-            <div className={cx('dashboard__icon-box', `dashboard__icon-box--${item.color}`)}>{item.icon}</div>
-            <div className={cx('dashboard__stat-info')}>
-              <h2>{item.count}</h2>
-              <p>{item.label}</p>
-            </div>
-            <span
-              className={cx('dashboard__badge', {
-                'dashboard__badge--positive': !item.negative,
-                'dashboard__badge--negative': item.negative,
-              })}
-            >
-              {item.badge}
-            </span>
-          </div>
-        ))}
-      </section>
+      {/* Use extracted DashboardStats component */}
+      <DashboardStats cards={overviewCards} isLoading={isLoadingDashboard} />
 
       <section className={cx('dashboard__grid')}>
         <div className={cx('dashboard__chart')}>
@@ -358,10 +144,8 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        <div className={cx('dashboard__recent')}>
-          <h3 className={cx('dashboard__recent-title')}>Hoạt động gần đây</h3>
-          <ul className={cx('dashboard__recent-list')}>{renderRecentActivities()}</ul>
-        </div>
+        {/* Use extracted RecentActivitiesTable component */}
+        <RecentActivitiesTable activities={recentActivities} isLoading={isLoadingRecent} />
 
         <div className={cx('dashboard__upcoming')}>
           <div className={cx('dashboard__upcoming-header')}>

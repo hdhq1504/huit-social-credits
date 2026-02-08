@@ -2,144 +2,55 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import { useNavigate } from 'react-router-dom';
 import classNames from 'classnames/bind';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Input, Select, DatePicker, Tag, Tooltip, Modal, ConfigProvider } from 'antd';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faEye,
-  faPenToSquare,
-  faTrashAlt,
-  faSort,
-  faCircleDot,
-  faSearch,
-  faPlus,
-  faCheck,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
-import dayjs from 'dayjs';
+import { ConfigProvider, Tooltip, Popconfirm } from 'antd';
 import viVN from 'antd/locale/vi_VN';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPlus, faEye, faEdit, faTrash, faCheck, faTimes, faSort } from '@fortawesome/free-solid-svg-icons';
+import dayjs from 'dayjs';
+import activitiesApi, { ACTIVITIES_QUERY_KEY } from '@/api/activities.api';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
-import activitiesApi, { ACTIVITIES_QUERY_KEY } from '@/api/activities.api';
-import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
+import { ROUTE_PATHS } from '@/config/routes.config';
+import useTable from '@/hooks/useTable';
+import useModal from '@/hooks/useModal';
+import useConfirmDialog from '@/hooks/useConfirmDialog';
 import useToast from '@/components/Toast/Toast';
-import useDebounce from '@/hooks/useDebounce';
+
+// Sub-components
+import { ActivitiesFilters, BulkActionsBar, DeleteActivityModal, RejectActivitiesModal } from './components';
+import {
+  formatDateTime,
+  deriveStatusCategory,
+  getGroupTag,
+  getStatusTag,
+  getApprovalStatusTag,
+} from './activitiesUtils';
+
 import styles from './ActivitiesPage.module.scss';
 
 const cx = classNames.bind(styles);
-const { Option } = Select;
-
-const formatDateTime = (isoString) => {
-  if (!isoString) return '--';
-  return dayjs(isoString).format('HH:mm DD/MM/YYYY');
-};
-
-const STATUS_CATEGORY_MAP = {
-  ongoing: 'ongoing',
-  check_in: 'ongoing',
-  check_out: 'ongoing',
-  confirm_out: 'ongoing',
-  attendance_review: 'ongoing',
-  upcoming: 'upcoming',
-  registered: 'upcoming',
-  attendance_closed: 'upcoming',
-  ended: 'ended',
-  feedback_pending: 'ended',
-  feedback_reviewing: 'ended',
-  completed: 'ended',
-  feedback_accepted: 'ended',
-  feedback_waiting: 'ended',
-  feedback_denied: 'ended',
-  canceled: 'ended',
-  absent: 'ended',
-};
-
-const deriveStatusCategory = (activity) => {
-  if (!activity) return 'upcoming';
-  const mapped = STATUS_CATEGORY_MAP[activity.state];
-  if (mapped) return mapped;
-
-  const now = dayjs();
-  const start = activity.startTime ? dayjs(activity.startTime) : null;
-  const end = activity.endTime ? dayjs(activity.endTime) : null;
-
-  if (start && now.isBefore(start)) return 'upcoming';
-  if (end && now.isAfter(end)) return 'ended';
-  if (start && (!end || now.isBefore(end))) return 'ongoing';
-  return 'upcoming';
-};
-
-const GROUP_TAG_CLASS = {
-  NHOM_1: 'activities-page__group-tag--nhom-1',
-  NHOM_2: 'activities-page__group-tag--nhom-2',
-  NHOM_3: 'activities-page__group-tag--nhom-3',
-};
-
-const getGroupTag = (groupId, groupLabel) => {
-  const label = groupLabel || groupId || '--';
-  const tagClass = GROUP_TAG_CLASS[groupId] || GROUP_TAG_CLASS.NHOM_2;
-  return <Tag className={cx('activities-page__group-tag', tagClass)}>{label}</Tag>;
-};
-
-const getStatusTag = (status) => {
-  switch (status) {
-    case 'ongoing':
-      return (
-        <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--ongoing')}>
-          <FontAwesomeIcon icon={faCircleDot} className={cx('activities-page__status-dot')} />
-          Đang diễn ra
-        </Tag>
-      );
-    case 'upcoming':
-      return (
-        <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--upcoming')}>
-          <FontAwesomeIcon icon={faCircleDot} className={cx('activities-page__status-dot')} />
-          Sắp diễn ra
-        </Tag>
-      );
-    case 'ended':
-      return (
-        <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--ended')}>
-          <FontAwesomeIcon icon={faCircleDot} className={cx('activities-page__status-dot')} />
-          Đã kết thúc
-        </Tag>
-      );
-    default:
-      return <Tag>{status}</Tag>;
-  }
-};
-
-const getApprovalStatusTag = (approvalStatus) => {
-  switch (approvalStatus) {
-    case 'CHO_DUYET':
-      return <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--pending')}>Chờ duyệt</Tag>;
-    case 'DA_DUYET':
-      return <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--approved')}>Đã duyệt</Tag>;
-    case 'BI_TU_CHOI':
-      return (
-        <Tag className={cx('activities-page__status-tag', 'activities-page__status-tag--rejected')}>Bị từ chối</Tag>
-      );
-    default:
-      return null;
-  }
-};
 
 export default function ActivitiesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { contextHolder, open: openToast } = useToast();
   const { setPageActions } = useContext(AdminPageContext);
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
-  const [searchTerm, setSearchTerm] = useState('');
+  const { contextHolder, open: openToast } = useToast();
+
+  // State management
+  const table = useTable({ initialPageSize: 10, debounceDelay: 400 });
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedApprovalStatus, setSelectedApprovalStatus] = useState('all');
   const [selectedDate, setSelectedDate] = useState(null);
-  const [activityToDelete, setActivityToDelete] = useState(null);
-  const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const debouncedSearch = useDebounce(searchTerm, 400);
+  const [selectedApprovalStatus, setSelectedApprovalStatus] = useState('all');
 
+  // Modal state
+  const deleteModal = useConfirmDialog({
+    onConfirm: (activity) => deleteMutation.mutateAsync(activity.id),
+  });
+  const rejectModal = useModal();
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Set up page actions
   useEffect(() => {
     setPageActions([
       {
@@ -155,11 +66,13 @@ export default function ActivitiesPage() {
     return () => setPageActions(null);
   }, [setPageActions, navigate]);
 
+  // Data fetching
   const { data: activities = [], isLoading } = useQuery({
     queryKey: ACTIVITIES_QUERY_KEY,
     queryFn: activitiesApi.list,
   });
 
+  // Mutations
   const deleteMutation = useMutation({
     mutationFn: (id) => activitiesApi.remove(id),
     onSuccess: () => {
@@ -193,7 +106,7 @@ export default function ActivitiesPage() {
     onSuccess: () => {
       openToast({ message: 'Từ chối hoạt động thành công!', variant: 'success' });
       queryClient.invalidateQueries(ACTIVITIES_QUERY_KEY);
-      setRejectModalOpen(false);
+      rejectModal.close();
       setRejectReason('');
     },
     onError: (error) => {
@@ -204,8 +117,9 @@ export default function ActivitiesPage() {
     },
   });
 
+  // Filter activities
   const filteredActivities = useMemo(() => {
-    const normalizedSearch = debouncedSearch.trim().toLowerCase();
+    const normalizedSearch = table.filters.debouncedSearch.trim().toLowerCase();
 
     return activities
       .filter((activity) => {
@@ -229,36 +143,20 @@ export default function ActivitiesPage() {
         return matchesSearch && matchesGroup && matchesStatus && matchesDate && matchesApprovalStatus;
       })
       .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-  }, [activities, debouncedSearch, selectedGroup, selectedStatus, selectedDate, selectedApprovalStatus]);
+  }, [activities, table.filters.debouncedSearch, selectedGroup, selectedStatus, selectedDate, selectedApprovalStatus]);
 
+  // Reset pagination on filter change
   useEffect(() => {
-    setPagination((prev) => ({ ...prev, current: 1 }));
-  }, [debouncedSearch, selectedGroup, selectedStatus, selectedDate, selectedApprovalStatus]);
+    table.resetPagination();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGroup, selectedStatus, selectedDate, selectedApprovalStatus]);
 
-  const handleOpenDeleteModal = useCallback((activity) => {
-    setActivityToDelete(activity);
-  }, []);
-
-  const handleCancelDelete = useCallback(() => {
-    setActivityToDelete(null);
-  }, []);
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (!activityToDelete) return;
-    try {
-      await deleteMutation.mutateAsync(activityToDelete.id);
-    } finally {
-      setActivityToDelete(null);
-    }
-  }, [activityToDelete, deleteMutation]);
-
+  // Bulk actions
   const handleBulkApprove = useCallback(async () => {
-    if (!selectedRowKeys.length) return;
+    if (!table.selection.selectedKeys.length) return;
 
-    // Process sequentially to avoid overwhelming the server or hitting rate limits
-    // In a real app, you might want a bulk API endpoint
     let successCount = 0;
-    for (const id of selectedRowKeys) {
+    for (const id of table.selection.selectedKeys) {
       try {
         await approveMutation.mutateAsync(id);
         successCount++;
@@ -268,15 +166,16 @@ export default function ActivitiesPage() {
     }
 
     if (successCount > 0) {
-      setSelectedRowKeys([]);
+      table.selection.clearSelection();
     }
-  }, [selectedRowKeys, approveMutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveMutation]);
 
   const handleBulkReject = useCallback(async () => {
-    if (!selectedRowKeys.length || !rejectReason.trim()) return;
+    if (!table.selection.selectedKeys.length || !rejectReason.trim()) return;
 
     let successCount = 0;
-    for (const id of selectedRowKeys) {
+    for (const id of table.selection.selectedKeys) {
       try {
         await rejectMutation.mutateAsync({ id, reason: rejectReason });
         successCount++;
@@ -286,25 +185,22 @@ export default function ActivitiesPage() {
     }
 
     if (successCount > 0) {
-      setSelectedRowKeys([]);
-      setRejectModalOpen(false);
+      table.selection.clearSelection();
+      rejectModal.close();
       setRejectReason('');
     }
-  }, [selectedRowKeys, rejectReason, rejectMutation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rejectReason, rejectMutation]);
 
   const rowSelection = {
-    selectedRowKeys,
-    onChange: (newSelectedRowKeys) => setSelectedRowKeys(newSelectedRowKeys),
+    selectedRowKeys: table.selection.selectedKeys,
+    onChange: table.selection.setSelectedKeys,
   };
 
+  // Table columns
   const columns = useMemo(
     () => [
-      {
-        title: 'STT',
-        dataIndex: 'index',
-        key: 'index',
-        width: 60,
-      },
+      { title: 'STT', dataIndex: 'index', key: 'index', width: 60 },
       {
         title: 'Tên hoạt động',
         dataIndex: 'title',
@@ -316,102 +212,97 @@ export default function ActivitiesPage() {
         title: 'Nhóm',
         dataIndex: 'pointGroup',
         key: 'pointGroup',
-        width: 150,
-        sorter: (a, b) => a.pointGroupLabel.localeCompare(b.pointGroupLabel),
+        width: 120,
+        sorter: (a, b) => (a.pointGroup || '').localeCompare(b.pointGroup || ''),
       },
       {
         title: 'Học kỳ',
-        dataIndex: 'semester',
+        dataIndex: 'semesterName',
         key: 'semester',
-        width: 110,
-        sorter: (a, b) => (a.semester || '').localeCompare(b.semester || ''),
+        width: 100,
+        sorter: (a, b) => (a.semesterName || '').localeCompare(b.semesterName || ''),
       },
       {
         title: 'Năm học',
-        dataIndex: 'academicYear',
+        dataIndex: 'academicYearName',
         key: 'academicYear',
-        width: 130,
-        sorter: (a, b) => (a.academicYear || '').localeCompare(b.academicYear || ''),
+        width: 120,
+        sorter: (a, b) => (a.academicYearName || '').localeCompare(b.academicYearName || ''),
       },
       {
         title: 'Điểm',
         dataIndex: 'points',
         key: 'points',
         width: 80,
-        align: 'center',
-        sorter: (a, b) => a.points - b.points,
+        sorter: (a, b) => (a.points || 0) - (b.points || 0),
       },
       {
-        title: 'Số lượng',
+        title: 'SL',
         dataIndex: 'capacity',
         key: 'capacity',
-        width: 100,
-        align: 'center',
-        sorter: (a, b) => a.participantsCount - b.participantsCount,
+        width: 80,
+        sorter: (a, b) => (a.capacity || 0) - (b.capacity || 0),
       },
       {
-        title: 'Thời gian bắt đầu',
+        title: 'Bắt đầu',
         dataIndex: 'startTime',
         key: 'startTime',
-        width: 180,
-        sorter: (a, b) => new Date(a.startTime) - new Date(b.startTime),
+        width: 150,
+        sorter: (a, b) => new Date(a.startTime || 0) - new Date(b.startTime || 0),
       },
       {
-        title: 'Thời gian kết thúc',
+        title: 'Kết thúc',
         dataIndex: 'endTime',
         key: 'endTime',
-        width: 180,
-        sorter: (a, b) => new Date(a.endTime) - new Date(b.endTime),
+        width: 150,
+        sorter: (a, b) => new Date(a.endTime || 0) - new Date(b.endTime || 0),
       },
       {
         title: 'Trạng thái',
         dataIndex: 'state',
         key: 'state',
-        width: 150,
+        width: 130,
         sorter: (a, b) => deriveStatusCategory(a).localeCompare(deriveStatusCategory(b)),
       },
       {
-        title: 'Trạng thái duyệt',
+        title: 'Duyệt',
         dataIndex: 'approvalStatus',
         key: 'approvalStatus',
-        width: 150,
+        width: 100,
         sorter: (a, b) => (a.approvalStatus || '').localeCompare(b.approvalStatus || ''),
       },
-      {
-        title: 'Hành động',
-        key: 'actions',
-        width: 120,
-        align: 'center',
-      },
+      { title: 'Hành động', dataIndex: 'actions', key: 'actions', width: 120, fixed: 'right' },
     ],
     [],
   );
 
+  // Column renderers
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      index: ({ index }) => index,
       title: ({ value, record }) => (
-        <div className={cx('activities-page__activity')}>
-          <strong className={cx('activities-page__activity-title')}>{value || 'Chưa đặt tên'}</strong>
-          <p className={cx('activities-page__activity-location')}>{record.location || 'Chưa cập nhật địa điểm'}</p>
-        </div>
+        <Tooltip title={value}>
+          <span
+            className={cx('activities-page__link')}
+            onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/${record.id}`)}
+          >
+            {value}
+          </span>
+        </Tooltip>
       ),
       pointGroup: ({ record }) => getGroupTag(record.pointGroup, record.pointGroupLabel),
       semester: ({ value }) => value || '--',
       academicYear: ({ value }) => value || '--',
-      points: ({ value }) => {
-        const resolvedValue = Number.isFinite(Number(value)) ? Number(value) : 0;
-        return <strong className={cx('activities-page__points')}>+{resolvedValue}</strong>;
-      },
-      capacity: ({ record }) => {
-        const joined = Number.isFinite(Number(record.participantsCount)) ? Number(record.participantsCount) : 0;
-        const capacityLabel = record.maxCapacity || 'Không giới hạn';
-        return (
-          <span>
-            {joined}/{capacityLabel}
-          </span>
-        );
-      },
+      points: ({ value }) => (
+        <span className={cx('activities-page__points', { 'activities-page__points--highlight': value > 0 })}>
+          {value != null ? `+${value}` : '--'}
+        </span>
+      ),
+      capacity: ({ record }) => (
+        <span>
+          {record.registrationCount ?? 0}/{record.capacity ?? '∞'}
+        </span>
+      ),
       startTime: ({ value }) => formatDateTime(value),
       endTime: ({ value }) => formatDateTime(value),
       state: ({ record }) => getStatusTag(deriveStatusCategory(record)),
@@ -421,8 +312,8 @@ export default function ActivitiesPage() {
           <Tooltip title="Xem chi tiết">
             <button
               type="button"
-              className={cx('activities-page__action-button', 'activities-page__action-button--view')}
-              onClick={() => navigate(buildPath.adminActivityDetail(record.id))}
+              className={cx('activities-page__action-button')}
+              onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/${record.id}`)}
             >
               <FontAwesomeIcon icon={faEye} />
             </button>
@@ -430,30 +321,56 @@ export default function ActivitiesPage() {
           <Tooltip title="Chỉnh sửa">
             <button
               type="button"
-              className={cx('activities-page__action-button', 'activities-page__action-button--edit')}
-              onClick={() => navigate(buildPath.adminActivityEdit(record.id))}
+              className={cx('activities-page__action-button')}
+              onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/edit/${record.id}`)}
             >
-              <FontAwesomeIcon icon={faPenToSquare} />
+              <FontAwesomeIcon icon={faEdit} />
             </button>
           </Tooltip>
+          {record.approvalStatus === 'CHO_DUYET' && (
+            <>
+              <Popconfirm
+                title="Duyệt hoạt động?"
+                onConfirm={() => approveMutation.mutate(record.id)}
+                okText="Duyệt"
+                cancelText="Hủy"
+              >
+                <Tooltip title="Duyệt">
+                  <button
+                    type="button"
+                    className={cx('activities-page__action-button', 'activities-page__action-button--approve')}
+                  >
+                    <FontAwesomeIcon icon={faCheck} />
+                  </button>
+                </Tooltip>
+              </Popconfirm>
+              <Tooltip title="Từ chối">
+                <button
+                  type="button"
+                  className={cx('activities-page__action-button', 'activities-page__action-button--reject')}
+                  onClick={() => {
+                    table.selection.setSelectedKeys([record.id]);
+                    rejectModal.open();
+                  }}
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              </Tooltip>
+            </>
+          )}
           <Tooltip title="Xóa">
             <button
               type="button"
               className={cx('activities-page__action-button', 'activities-page__action-button--delete')}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleOpenDeleteModal(record);
-              }}
-              disabled={deleteMutation.isLoading}
+              onClick={() => deleteModal.open(record)}
             >
-              <FontAwesomeIcon icon={faTrashAlt} />
+              <FontAwesomeIcon icon={faTrash} />
             </button>
           </Tooltip>
         </div>
       ),
     }),
-    [deleteMutation.isLoading, handleOpenDeleteModal, navigate, pagination],
+    [navigate, approveMutation, deleteModal, rejectModal, table.selection],
   );
 
   const renderSortIcon = useCallback(
@@ -470,56 +387,18 @@ export default function ActivitiesPage() {
     <ConfigProvider locale={viVN}>
       {contextHolder}
       <div className={cx('activities-page')}>
-        <div className={cx('activities-page__filter-bar')}>
-          <Input
-            placeholder="Tìm kiếm hoạt động..."
-            className={cx('activities-page__filter-search')}
-            prefix={<FontAwesomeIcon icon={faSearch} />}
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-          />
-          <Select
-            placeholder="Nhóm hoạt động"
-            className={cx('activities-page__filter-select')}
-            value={selectedGroup}
-            onChange={setSelectedGroup}
-          >
-            <Option value="all">Tất cả nhóm</Option>
-            <Option value="NHOM_1">Nhóm 1</Option>
-            <Option value="NHOM_2">Nhóm 2</Option>
-            <Option value="NHOM_3">Nhóm 3</Option>
-          </Select>
-          <Select
-            placeholder="Trạng thái"
-            className={cx('activities-page__filter-select')}
-            value={selectedStatus}
-            onChange={setSelectedStatus}
-          >
-            <Option value="all">Tất cả trạng thái</Option>
-            <Option value="ongoing">Đang diễn ra</Option>
-            <Option value="upcoming">Sắp diễn ra</Option>
-            <Option value="ended">Đã kết thúc</Option>
-          </Select>
-          <Select
-            placeholder="Trạng thái duyệt"
-            className={cx('activities-page__filter-select')}
-            value={selectedApprovalStatus}
-            onChange={setSelectedApprovalStatus}
-          >
-            <Option value="all">Tất cả trạng thái duyệt</Option>
-            <Option value="CHO_DUYET">Chờ duyệt</Option>
-            <Option value="DA_DUYET">Đã duyệt</Option>
-            <Option value="BI_TU_CHOI">Bị từ chối</Option>
-          </Select>
-          <DatePicker
-            placeholder="Lọc theo ngày"
-            className={cx('activities-page__filter-date')}
-            locale={viVN}
-            value={selectedDate}
-            onChange={setSelectedDate}
-            allowClear
-          />
-        </div>
+        <ActivitiesFilters
+          searchValue={table.filters.search}
+          onSearchChange={table.filters.setSearch}
+          selectedGroup={selectedGroup}
+          onGroupChange={setSelectedGroup}
+          selectedStatus={selectedStatus}
+          onStatusChange={setSelectedStatus}
+          selectedApprovalStatus={selectedApprovalStatus}
+          onApprovalStatusChange={setSelectedApprovalStatus}
+          selectedDate={selectedDate}
+          onDateChange={setSelectedDate}
+        />
 
         <div className={cx('activities-page__content')}>
           <div className={cx('activities-page__content-header')}>
@@ -533,12 +412,10 @@ export default function ActivitiesPage() {
             columnRenderers={columnRenderers}
             rowSelection={rowSelection}
             pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
+              current: table.pagination.current,
+              pageSize: table.pagination.pageSize,
               total: filteredActivities.length,
-              onChange: (page, pageSize) => {
-                setPagination({ current: page, pageSize });
-              },
+              onChange: table.pagination.onChange,
               showSizeChanger: false,
             }}
             sortIcon={renderSortIcon}
@@ -546,70 +423,35 @@ export default function ActivitiesPage() {
           />
         </div>
 
-        {selectedRowKeys.length > 0 && (
-          <div className={cx('activities-page__bulk-actions')}>
-            <div className={cx('activities-page__bulk-info')}>
-              Đã chọn <strong>{selectedRowKeys.length}</strong> hoạt động
-            </div>
-            <div className={cx('activities-page__bulk-buttons')}>
-              <button
-                type="button"
-                className={cx('activities-page__bulk-button', 'activities-page__bulk-button--approve')}
-                onClick={handleBulkApprove}
-                disabled={approveMutation.isLoading}
-              >
-                <FontAwesomeIcon icon={faCheck} /> Duyệt
-              </button>
-              <button
-                type="button"
-                className={cx('activities-page__bulk-button', 'activities-page__bulk-button--reject')}
-                onClick={() => setRejectModalOpen(true)}
-                disabled={rejectMutation.isLoading}
-              >
-                <FontAwesomeIcon icon={faTimes} /> Từ chối
-              </button>
-            </div>
-          </div>
-        )}
+        <BulkActionsBar
+          selectedCount={table.selection.selectedKeys.length}
+          onApprove={handleBulkApprove}
+          onReject={() => rejectModal.open()}
+          isApproving={approveMutation.isLoading}
+          isRejecting={rejectMutation.isLoading}
+        />
       </div>
-      <Modal
-        open={!!activityToDelete}
-        title="Bạn có chắc chắn muốn xóa?"
-        okText="Xóa"
-        okType="danger"
-        cancelText="Hủy"
-        confirmLoading={deleteMutation.isLoading}
-        onOk={handleConfirmDelete}
-        onCancel={handleCancelDelete}
-        destroyOnClose
-        centered
-      >
-        <p>Hoạt động "{activityToDelete?.title}" sẽ bị xóa vĩnh viễn và không thể khôi phục.</p>
-      </Modal>
 
-      <Modal
-        open={rejectModalOpen}
-        title="Từ chối hoạt động"
-        okText="Xác nhận từ chối"
-        okType="danger"
-        cancelText="Hủy"
-        confirmLoading={rejectMutation.isLoading}
-        onOk={handleBulkReject}
-        onCancel={() => {
-          setRejectModalOpen(false);
+      <DeleteActivityModal
+        isOpen={deleteModal.isOpen}
+        onConfirm={deleteModal.confirm}
+        onCancel={deleteModal.close}
+        isLoading={deleteModal.isLoading}
+        activityTitle={deleteModal.data?.title}
+      />
+
+      <RejectActivitiesModal
+        isOpen={rejectModal.isOpen}
+        onClose={() => {
+          rejectModal.close();
           setRejectReason('');
         }}
-        destroyOnClose
-        centered
-      >
-        <p>Vui lòng nhập lý do từ chối cho {selectedRowKeys.length} hoạt động đã chọn:</p>
-        <Input.TextArea
-          rows={4}
-          value={rejectReason}
-          onChange={(e) => setRejectReason(e.target.value)}
-          placeholder="Nhập lý do từ chối..."
-        />
-      </Modal>
+        onConfirm={handleBulkReject}
+        isLoading={rejectMutation.isPending}
+        selectedCount={table.selection.selectedKeys.length}
+        rejectReason={rejectReason}
+        onReasonChange={setRejectReason}
+      />
     </ConfigProvider>
   );
 }
