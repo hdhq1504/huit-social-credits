@@ -9,19 +9,22 @@ import {
   computeFeedbackWindow,
 } from "../../utils/activity.js";
 import { extractStoragePaths } from "../../utils/storageMapper.js";
+import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
 /**
  * Gửi phản hồi hoạt động của sinh viên.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const submitActivityFeedback = async (req, res) => {
+export const submitActivityFeedback = asyncHandler(async (req, res) => {
   const userId = req.user?.sub;
   const { id: activityId } = req.params;
   const { content, attachments } = req.body || {};
 
   if (!content || !String(content).trim()) {
-    return res.status(400).json({ error: "Nội dung phản hồi không được bỏ trống" });
+    return res
+      .status(400)
+      .json({ error: "Nội dung phản hồi không được bỏ trống" });
   }
 
   const user = await prisma.nguoiDung.findUnique({
@@ -31,26 +34,42 @@ export const submitActivityFeedback = async (req, res) => {
   if (!user) return res.status(404).json({ error: "Người dùng không tồn tại" });
 
   const registration = await prisma.dangKyHoatDong.findUnique({
-    where: { nguoiDungId_hoatDongId: { nguoiDungId: userId, hoatDongId: activityId } },
+    where: {
+      nguoiDungId_hoatDongId: { nguoiDungId: userId, hoatDongId: activityId },
+    },
     include: { phanHoi: true, hoatDong: true, lichSuDiemDanh: true },
   });
 
   if (!registration || registration.trangThai === "DA_HUY") {
-    return res.status(404).json({ error: "Bạn chưa đăng ký hoạt động này hoặc đã hủy trước đó" });
+    return res
+      .status(404)
+      .json({ error: "Bạn chưa đăng ký hoạt động này hoặc đã hủy trước đó" });
   }
 
   if (registration.trangThai !== "CHO_DUYET") {
-    return res.status(400).json({ error: "Kết quả điểm danh đã được xử lý, không thể gửi phản hồi" });
+    return res
+      .status(400)
+      .json({
+        error: "Kết quả điểm danh đã được xử lý, không thể gửi phản hồi",
+      });
   }
 
   const history = registration.lichSuDiemDanh || [];
   const hasFaceIssue = history.some((entry) => entry.faceMatch === "REVIEW");
 
   if (!hasFaceIssue) {
-    return res.status(400).json({ error: "Bạn không thuộc diện cần phản hồi minh chứng (không có ảnh cần kiểm tra)" });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Bạn không thuộc diện cần phản hồi minh chứng (không có ảnh cần kiểm tra)",
+      });
   }
 
-  const { start, end } = computeFeedbackWindow(registration.hoatDong, registration);
+  const { start, end } = computeFeedbackWindow(
+    registration.hoatDong,
+    registration,
+  );
   const now = new Date();
 
   // Test
@@ -62,10 +81,16 @@ export const submitActivityFeedback = async (req, res) => {
   // }
 
   const existingFeedback = registration.phanHoi ?? null;
-  const existingAttachments = existingFeedback ? sanitizeFeedbackAttachmentList(existingFeedback.minhChung) : [];
+  const existingAttachments = existingFeedback
+    ? sanitizeFeedbackAttachmentList(existingFeedback.minhChung)
+    : [];
 
   const normalizedAttachments = sanitizeFeedbackAttachmentList(attachments);
-  if (Array.isArray(attachments) && attachments.length && !normalizedAttachments.length) {
+  if (
+    Array.isArray(attachments) &&
+    attachments.length &&
+    !normalizedAttachments.length
+  ) {
     return res.status(400).json({ error: "Danh sách minh chứng không hợp lệ" });
   }
 
@@ -113,7 +138,8 @@ export const submitActivityFeedback = async (req, res) => {
   });
 
   const activity = await buildActivityResponse(activityId, userId);
-  const activityTitle = activity?.title ?? registration.hoatDong?.tieuDe ?? "hoạt động";
+  const activityTitle =
+    activity?.title ?? registration.hoatDong?.tieuDe ?? "hoạt động";
 
   await notifyUser({
     userId,
@@ -125,7 +151,9 @@ export const submitActivityFeedback = async (req, res) => {
     emailSubject: `[HUIT Social Credits] Xác nhận gửi phản hồi hoạt động "${activityTitle}"`,
     emailMessageLines: [
       `Phản hồi của bạn cho hoạt động "${activityTitle}" đã được gửi thành công.`,
-      normalizedAttachments.length ? `Số lượng minh chứng: ${normalizedAttachments.length}` : null,
+      normalizedAttachments.length
+        ? `Số lượng minh chứng: ${normalizedAttachments.length}`
+        : null,
     ],
   });
 
@@ -134,4 +162,4 @@ export const submitActivityFeedback = async (req, res) => {
     feedback: mapFeedback(feedback),
     activity,
   });
-};
+});

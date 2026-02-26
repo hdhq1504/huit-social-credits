@@ -6,12 +6,16 @@ export const NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY = [...NOTIFICATIONS_QUERY_KEY,
 export const notificationsApi = {
   /**
    * Lấy danh sách thông báo.
-   * @param {Object} params - Tham số truy vấn.
-   * @returns {Promise<Array>} Danh sách thông báo.
+   * @param {Object} params - Tham số truy vấn (limit, cursor).
+   * @returns {Promise<Object>} { notifications, hasMore, nextCursor }.
    */
   async list(params = {}) {
     const { data } = await http.get('/notifications', { params });
-    return data.notifications ?? [];
+    return {
+      notifications: data.notifications ?? [],
+      hasMore: data.hasMore ?? false,
+      nextCursor: data.nextCursor ?? null,
+    };
   },
 
   /**

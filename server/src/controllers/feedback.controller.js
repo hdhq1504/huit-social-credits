@@ -1,11 +1,12 @@
 import prisma from "../prisma.js";
 import { env } from "../env.js";
 import { mapStorageListForResponse } from "../utils/storageMapper.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 const STATUS_LABELS = {
   CHO_DUYET: "Chờ duyệt",
   DA_DUYET: "Đã duyệt",
-  BI_TU_CHOI: "Từ chối"
+  BI_TU_CHOI: "Từ chối",
 };
 
 const ALLOWED_STATUSES = new Set(Object.keys(STATUS_LABELS));
@@ -28,29 +29,29 @@ const FEEDBACK_LIST_INCLUDE = {
               khoa: {
                 select: {
                   maKhoa: true,
-                  tenKhoa: true
-                }
-              }
-            }
-          }
-        }
+                  tenKhoa: true,
+                },
+              },
+            },
+          },
+        },
       },
       khoa: {
         select: {
           maKhoa: true,
-          tenKhoa: true
-        }
+          tenKhoa: true,
+        },
       },
-      avatarUrl: true
-    }
+      avatarUrl: true,
+    },
   },
   hoatDong: {
     select: {
       id: true,
       tieuDe: true,
-      batDauLuc: true
-    }
-  }
+      batDauLuc: true,
+    },
+  },
 };
 
 const FEEDBACK_DETAIL_INCLUDE = {
@@ -68,22 +69,22 @@ const FEEDBACK_DETAIL_INCLUDE = {
               khoa: {
                 select: {
                   maKhoa: true,
-                  tenKhoa: true
-                }
-              }
-            }
-          }
-        }
+                  tenKhoa: true,
+                },
+              },
+            },
+          },
+        },
       },
       khoa: {
         select: {
           maKhoa: true,
-          tenKhoa: true
-        }
+          tenKhoa: true,
+        },
       },
       avatarUrl: true,
-      soDT: true
-    }
+      soDT: true,
+    },
   },
   hoatDong: {
     select: {
@@ -97,28 +98,31 @@ const FEEDBACK_DETAIL_INCLUDE = {
       sucChuaToiDa: true,
       dangKy: {
         select: {
-          id: true
-        }
+          id: true,
+        },
       },
       hocKyRef: {
         include: {
-          namHoc: true
-        }
+          namHoc: true,
+        },
       },
-      namHocRef: true
-    }
+      namHocRef: true,
+    },
   },
   dangKy: {
     select: {
       id: true,
       trangThai: true,
-      diemDanhLuc: true
-    }
-  }
+      diemDanhLuc: true,
+    },
+  },
 };
 
 // Chuyển đổi ngày tháng sang chuỗi ISO
-const toIsoString = (value) => (value instanceof Date ? value.toISOString() : value?.toISOString?.() ?? null);
+const toIsoString = (value) =>
+  value instanceof Date
+    ? value.toISOString()
+    : (value?.toISOString?.() ?? null);
 
 // Chuẩn hóa chuỗi
 const normalizeString = (value) => {
@@ -155,13 +159,21 @@ const mapStudentSummary = (student) => {
   if (!student) return null;
   return {
     id: student.id,
-    name: normalizeString(student.hoTen) || normalizeString(student.email) || "Người dùng",
+    name:
+      normalizeString(student.hoTen) ||
+      normalizeString(student.email) ||
+      "Người dùng",
     email: student.email ?? null,
     studentCode: student.maSV ?? null,
-    faculty: student.khoa?.tenKhoa || student.lopHoc?.nganhHoc?.khoa?.tenKhoa || student.khoa?.maKhoa || student.lopHoc?.nganhHoc?.khoa?.maKhoa || null,
+    faculty:
+      student.khoa?.tenKhoa ||
+      student.lopHoc?.nganhHoc?.khoa?.tenKhoa ||
+      student.khoa?.maKhoa ||
+      student.lopHoc?.nganhHoc?.khoa?.maKhoa ||
+      null,
     className: student.lopHoc?.maLop || null,
     avatarUrl: student.avatarUrl ?? null,
-    phone: student.soDT ?? null
+    phone: student.soDT ?? null,
   };
 };
 
@@ -177,10 +189,12 @@ const mapActivitySummary = (activity) => {
     pointGroup: activity.nhomDiem ?? null,
     location: activity.diaDiem ?? null,
     maxParticipants: activity.sucChuaToiDa ?? null,
-    participantCount: Array.isArray(activity.dangKy) ? activity.dangKy.length : 0,
+    participantCount: Array.isArray(activity.dangKy)
+      ? activity.dangKy.length
+      : 0,
     semesterDisplay: activity.hocKyRef
       ? `${activity.hocKyRef.ten} - ${activity.hocKyRef.namHoc?.ten || ""}`
-      : activity.namHocRef?.ten || null
+      : activity.namHocRef?.ten || null,
   };
 };
 
@@ -192,7 +206,7 @@ const mapFeedbackListItem = (feedback) => ({
   submittedAt: toIsoString(feedback.taoLuc),
   updatedAt: toIsoString(feedback.capNhatLuc),
   student: mapStudentSummary(feedback.nguoiDung),
-  activity: mapActivitySummary(feedback.hoatDong)
+  activity: mapActivitySummary(feedback.hoatDong),
 });
 
 const mapFeedbackDetail = (feedback) => ({
@@ -208,22 +222,24 @@ const mapFeedbackDetail = (feedback) => ({
   activity: mapActivitySummary(feedback.hoatDong),
   registration: feedback.dangKy
     ? {
-      id: feedback.dangKy.id,
-      status: feedback.dangKy.trangThai,
-      checkedInAt: toIsoString(feedback.dangKy.diemDanhLuc)
-    }
-    : null
+        id: feedback.dangKy.id,
+        status: feedback.dangKy.trangThai,
+        checkedInAt: toIsoString(feedback.dangKy.diemDanhLuc),
+      }
+    : null,
 });
 
 // Lấy thống kê phản hồi
 const getFeedbackStats = async () => {
   const statsGrouped = await prisma.phanHoiHoatDong.groupBy({
-    by: ['trangThai'],
-    _count: { id: true }
+    by: ["trangThai"],
+    _count: { id: true },
   });
 
   // Chuyển đổi kết quả groupBy thành object stats
-  const statsMap = new Map(statsGrouped.map(item => [item.trangThai, item._count.id]));
+  const statsMap = new Map(
+    statsGrouped.map((item) => [item.trangThai, item._count.id]),
+  );
 
   const pending = statsMap.get("CHO_DUYET") ?? 0;
   const approved = statsMap.get("DA_DUYET") ?? 0;
@@ -239,25 +255,27 @@ const buildFilterOptions = async () => {
     prisma.khoa.findMany({
       where: { isActive: true },
       select: { maKhoa: true, tenKhoa: true },
-      orderBy: { tenKhoa: 'asc' }
+      orderBy: { tenKhoa: "asc" },
     }),
     prisma.lopHoc.findMany({
       where: { sinhVien: { some: { phanHoi: { some: {} } } } },
       select: { maLop: true },
-      orderBy: { maLop: 'asc' }
+      orderBy: { maLop: "asc" },
     }),
     prisma.hoatDong.findMany({
       where: { phanHoi: { some: {} } },
-      select: { id: true, tieuDe: true }
-    })
+      select: { id: true, tieuDe: true },
+    }),
   ]);
 
   const sortAlpha = (a, b) => a.localeCompare(b, "vi", { sensitivity: "base" });
 
-  const faculties = facultiesRaw.map((item) => ({
-    label: normalizeString(item.tenKhoa) || item.maKhoa,
-    value: normalizeString(item.maKhoa)
-  })).filter(item => item.value);
+  const faculties = facultiesRaw
+    .map((item) => ({
+      label: normalizeString(item.tenKhoa) || item.maKhoa,
+      value: normalizeString(item.maKhoa),
+    }))
+    .filter((item) => item.value);
 
   const classes = classesRaw
     .map((item) => normalizeString(item.maLop))
@@ -267,20 +285,26 @@ const buildFilterOptions = async () => {
   const activities = activitiesRaw
     .map((item) => ({
       value: item.id,
-      label: normalizeString(item.tieuDe) || "Hoạt động"
+      label: normalizeString(item.tieuDe) || "Hoạt động",
     }))
     .sort((a, b) => sortAlpha(a.label, b.label));
 
   const statuses = Array.from(ALLOWED_STATUSES).map((value) => ({
     value,
-    label: STATUS_LABELS[value]
+    label: STATUS_LABELS[value],
   }));
 
   return { faculties, classes, activities, statuses };
 };
 
 // Xây dựng điều kiện lọc danh sách phản hồi
-const buildListWhereClause = ({ search, faculty, className, activityId, status }) => {
+const buildListWhereClause = ({
+  search,
+  faculty,
+  className,
+  activityId,
+  status,
+}) => {
   const filters = [];
 
   const normalizedStatus = normalizeString(status)?.toUpperCase();
@@ -294,9 +318,9 @@ const buildListWhereClause = ({ search, faculty, className, activityId, status }
       nguoiDung: {
         OR: [
           { khoa: { maKhoa: normalizedFaculty } },
-          { lopHoc: { nganhHoc: { khoa: { maKhoa: normalizedFaculty } } } }
-        ]
-      }
+          { lopHoc: { nganhHoc: { khoa: { maKhoa: normalizedFaculty } } } },
+        ],
+      },
     });
   }
 
@@ -315,11 +339,27 @@ const buildListWhereClause = ({ search, faculty, className, activityId, status }
     filters.push({
       OR: [
         { noiDung: { contains: normalizedSearch, mode: "insensitive" } },
-        { nguoiDung: { hoTen: { contains: normalizedSearch, mode: "insensitive" } } },
-        { nguoiDung: { email: { contains: normalizedSearch, mode: "insensitive" } } },
-        { nguoiDung: { maSV: { contains: normalizedSearch, mode: "insensitive" } } },
-        { hoatDong: { tieuDe: { contains: normalizedSearch, mode: "insensitive" } } }
-      ]
+        {
+          nguoiDung: {
+            hoTen: { contains: normalizedSearch, mode: "insensitive" },
+          },
+        },
+        {
+          nguoiDung: {
+            email: { contains: normalizedSearch, mode: "insensitive" },
+          },
+        },
+        {
+          nguoiDung: {
+            maSV: { contains: normalizedSearch, mode: "insensitive" },
+          },
+        },
+        {
+          hoatDong: {
+            tieuDe: { contains: normalizedSearch, mode: "insensitive" },
+          },
+        },
+      ],
     });
   }
 
@@ -333,7 +373,7 @@ const buildListWhereClause = ({ search, faculty, className, activityId, status }
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const listFeedbacks = async (req, res) => {
+export const listFeedbacks = asyncHandler(async (req, res) => {
   if (req.user?.role !== "ADMIN") {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -345,16 +385,25 @@ export const listFeedbacks = async (req, res) => {
     faculty,
     class: className,
     activityId,
-    status
+    status,
   } = req.query || {};
 
   const pageNumber = Number.parseInt(page, 10);
   const sizeNumber = Number.parseInt(pageSize, 10);
-  const take = Number.isFinite(sizeNumber) ? Math.min(Math.max(sizeNumber, 1), MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
-  const currentPage = Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1;
+  const take = Number.isFinite(sizeNumber)
+    ? Math.min(Math.max(sizeNumber, 1), MAX_PAGE_SIZE)
+    : DEFAULT_PAGE_SIZE;
+  const currentPage =
+    Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1;
   const skip = (currentPage - 1) * take;
 
-  const where = buildListWhereClause({ search, faculty, className, activityId, status });
+  const where = buildListWhereClause({
+    search,
+    faculty,
+    className,
+    activityId,
+    status,
+  });
 
   const [totalItems, items, stats, filters] = await Promise.all([
     prisma.phanHoiHoatDong.count({ where }),
@@ -363,10 +412,10 @@ export const listFeedbacks = async (req, res) => {
       include: FEEDBACK_LIST_INCLUDE,
       orderBy: { taoLuc: "desc" },
       skip,
-      take
+      take,
     }),
     getFeedbackStats(),
-    buildFilterOptions()
+    buildFilterOptions(),
   ]);
 
   const feedbacks = items.map((item) => mapFeedbackListItem(item));
@@ -378,19 +427,19 @@ export const listFeedbacks = async (req, res) => {
       total: totalItems,
       page: currentPage,
       pageSize: take,
-      pageCount
+      pageCount,
     },
     stats,
-    filters
+    filters,
   });
-};
+});
 
 /**
  * Lấy chi tiết phản hồi.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getFeedbackDetail = async (req, res) => {
+export const getFeedbackDetail = asyncHandler(async (req, res) => {
   if (req.user?.role !== "ADMIN") {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -403,7 +452,7 @@ export const getFeedbackDetail = async (req, res) => {
 
   const feedback = await prisma.phanHoiHoatDong.findUnique({
     where: { id: normalizedId },
-    include: FEEDBACK_DETAIL_INCLUDE
+    include: FEEDBACK_DETAIL_INCLUDE,
   });
 
   if (!feedback) {
@@ -414,16 +463,16 @@ export const getFeedbackDetail = async (req, res) => {
 
   res.json({
     feedback: mapFeedbackDetail(feedback),
-    stats
+    stats,
   });
-};
+});
 
 /**
  * Duyệt hoặc từ chối phản hồi.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const decideFeedbackStatus = async (req, res) => {
+export const decideFeedbackStatus = asyncHandler(async (req, res) => {
   if (req.user?.role !== "ADMIN") {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -456,8 +505,8 @@ export const decideFeedbackStatus = async (req, res) => {
       where: { id: { in: normalizedIds } },
       data: {
         trangThai: normalizedStatus,
-        lydoTuChoi: normalizedStatus === "BI_TU_CHOI" ? normalizedReason : null
-      }
+        lydoTuChoi: normalizedStatus === "BI_TU_CHOI" ? normalizedReason : null,
+      },
     });
 
     // Nếu duyệt phản hồi, cập nhật trạng thái đăng ký thành DA_THAM_GIA để cộng điểm
@@ -465,20 +514,18 @@ export const decideFeedbackStatus = async (req, res) => {
       // Lấy danh sách dangKyId từ các phản hồi được duyệt
       const feedbacks = await tx.phanHoiHoatDong.findMany({
         where: { id: { in: normalizedIds } },
-        select: { dangKyId: true }
+        select: { dangKyId: true },
       });
 
-      const registrationIds = feedbacks
-        .map((f) => f.dangKyId)
-        .filter(Boolean);
+      const registrationIds = feedbacks.map((f) => f.dangKyId).filter(Boolean);
 
       if (registrationIds.length > 0) {
         await tx.dangKyHoatDong.updateMany({
           where: { id: { in: registrationIds } },
           data: {
             trangThai: "DA_THAM_GIA",
-            duyetLuc: new Date()
-          }
+            duyetLuc: new Date(),
+          },
         });
       }
     }
@@ -492,13 +539,15 @@ export const decideFeedbackStatus = async (req, res) => {
 
   const stats = await getFeedbackStats();
   const message =
-    normalizedStatus === "DA_DUYET" ? "Đã duyệt phản hồi thành công" : "Đã từ chối phản hồi";
+    normalizedStatus === "DA_DUYET"
+      ? "Đã duyệt phản hồi thành công"
+      : "Đã từ chối phản hồi";
 
   res.json({ message, updated: updateResult.count, stats });
-};
+});
 
 export default {
   listFeedbacks,
   getFeedbackDetail,
-  decideFeedbackStatus
+  decideFeedbackStatus,
 };

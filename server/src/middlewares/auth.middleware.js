@@ -43,33 +43,22 @@ export function optionalAuth(req, _res, next) {
 }
 
 /**
- * Middleware yêu cầu quyền hạn (roles).
- * Kiểm tra xem user có một trong các role được phép hay không.
+ * Middleware kiểm tra quyền hạn (roles).
+ * Compose với requireAuth: xác thực trước, rồi kiểm tra role.
  * @param {...string} roles - Danh sách các role được phép.
- * @returns {Function} Express middleware function.
+ * @returns {Array<Function>} Mảng Express middleware functions.
  */
-export const requireRoles = (...roles) => (req, res, next) => {
-  // First ensure user is authenticated
-  const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: "Unauthorized" });
-
-  try {
-    const payload = verifyAccessToken(token);
-    req.user = { ...payload, id: payload.sub };
-  } catch {
-    return res.status(401).json({ error: "Token expired or invalid" });
-  }
-
-  // Then check role permissions
-  if (!req.user || !req.user.role) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
+export const requireRoles = (...roles) => {
   const allowedRoles = roles.flat().filter(Boolean);
-  if (allowedRoles.length > 0 && !allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: "Forbidden: Insufficient permissions" });
-  }
-
-  next();
+  return [
+    requireAuth,
+    (req, res, next) => {
+      if (allowedRoles.length > 0 && !allowedRoles.includes(req.user?.role)) {
+        return res
+          .status(403)
+          .json({ error: "Forbidden: Insufficient permissions" });
+      }
+      next();
+    },
+  ];
 };

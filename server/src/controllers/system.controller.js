@@ -1,10 +1,11 @@
 import prisma from "../prisma.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 // Kiểm tra quyền Admin
 const assertAdmin = (req) => {
   if (req.user?.role !== "ADMIN") {
     const error = new Error("Forbidden");
-    error.statusCode = 403;
+    error.status = 403;
     throw error;
   }
 };
@@ -33,55 +34,48 @@ const sanitizeRecords = (value) => {
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const createBackup = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const createBackup = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
-  try {
-    const results = await prisma.$transaction(
-      BACKUP_COLLECTIONS.map((collection) => prisma[collection.model].findMany())
-    );
+  const results = await prisma.$transaction(
+    BACKUP_COLLECTIONS.map((collection) => prisma[collection.model].findMany()),
+  );
 
-    const data = BACKUP_COLLECTIONS.reduce((acc, collection, index) => {
-      acc[collection.key] = results[index] || [];
-      return acc;
-    }, {});
+  const data = BACKUP_COLLECTIONS.reduce((acc, collection, index) => {
+    acc[collection.key] = results[index] || [];
+    return acc;
+  }, {});
 
-    const counts = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, Array.isArray(value) ? value.length : 0])
-    );
+  const counts = Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.length : 0,
+    ]),
+  );
 
-    const metadata = {
-      createdAt: new Date().toISOString(),
-      version: "1.0",
-      generatedBy: req.user?.sub || null,
-      counts
-    };
+  const metadata = {
+    createdAt: new Date().toISOString(),
+    version: "1.0",
+    generatedBy: req.user?.sub || null,
+    counts,
+  };
 
-    res.json({ metadata, data });
-  } catch (error) {
-    res.status(500).json({ error: "Không thể tạo backup dữ liệu." });
-  }
-};
+  res.json({ metadata, data });
+});
 
 /**
  * Khôi phục dữ liệu từ bản sao lưu (Admin).
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const restoreBackup = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const restoreBackup = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
   const payload = req.body && typeof req.body === "object" ? req.body : {};
   const rawData =
-    payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+    payload.data &&
+    typeof payload.data === "object" &&
+    !Array.isArray(payload.data)
       ? payload.data
       : payload;
 
@@ -94,9 +88,9 @@ export const restoreBackup = async (req, res) => {
     return acc;
   }, {});
 
-  try {
-    // Tăng timeout cho transaction vì restore có thể mất nhiều thời gian
-    await prisma.$transaction(async (tx) => {
+  // Tăng timeout cho transaction vì restore có thể mất nhiều thời gian
+  await prisma.$transaction(
+    async (tx) => {
       // Xóa các bảng có foreign key trước (theo thứ tự phụ thuộc)
       await tx.thongBao.deleteMany();
       await tx.diemDanhNguoiDung.deleteMany();
@@ -139,32 +133,30 @@ export const restoreBackup = async (req, res) => {
       if (normalized.faceProfiles.length) {
         await tx.faceProfile.createMany({ data: normalized.faceProfiles });
       }
-    }, {
-      maxWait: 10000,  // Thời gian chờ tối đa để bắt đầu transaction (10s)
-      timeout: 60000,  // Thời gian tối đa cho transaction (60s)
-    });
+    },
+    {
+      maxWait: 10000, // Thời gian chờ tối đa để bắt đầu transaction (10s)
+      timeout: 60000, // Thời gian tối đa cho transaction (60s)
+    },
+  );
 
-    const counts = Object.fromEntries(
-      Object.entries(normalized).map(([key, value]) => [key, Array.isArray(value) ? value.length : 0])
-    );
+  const counts = Object.fromEntries(
+    Object.entries(normalized).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.length : 0,
+    ]),
+  );
 
-    res.json({
-      message: "Khôi phục dữ liệu thành công.",
-      summary: {
-        restoredAt: new Date().toISOString(),
-        counts
-      }
-    });
-  } catch (error) {
-    console.error("Restore backup error:", error);
-    res.status(500).json({
-      error: "Khôi phục dữ liệu thất bại. Vui lòng kiểm tra lại tệp backup.",
-      details: error.message
-    });
-  }
-};
+  res.json({
+    message: "Khôi phục dữ liệu thành công.",
+    summary: {
+      restoredAt: new Date().toISOString(),
+      counts,
+    },
+  });
+});
 
 export default {
   createBackup,
-  restoreBackup
+  restoreBackup,
 };

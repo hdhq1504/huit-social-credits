@@ -1,6 +1,7 @@
 import prisma from "../prisma.js";
 import { generateCertificationPdf } from "../utils/councilPdf.js";
 import { generateCertificationExcel } from "../utils/councilExcel.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 const MANAGER_ROLES = new Set(["ADMIN", "GIANGVIEN"]);
 const RED_ADDRESS_KEYWORD = "dia chi do";
@@ -33,7 +34,7 @@ const ensureManager = (req) => {
   const role = req.user?.role;
   if (!MANAGER_ROLES.has(role)) {
     const error = new Error("Forbidden");
-    error.statusCode = 403;
+    error.status = 403;
     throw error;
   }
 };
@@ -85,7 +86,10 @@ const calculateStudentScores = (participations) => {
   const groupOneOverflow = Math.max(groupOnePoints - GROUP_ONE_TARGET, 0);
   const groupTwoThreeRaw = groupTwoPoints + groupThreePoints;
   const groupTwoThreeWithOverflow = groupTwoThreeRaw + groupOneOverflow;
-  const groupTwoThreeEffective = Math.min(groupTwoThreeWithOverflow, GROUP_TWO_THREE_TARGET);
+  const groupTwoThreeEffective = Math.min(
+    groupTwoThreeWithOverflow,
+    GROUP_TWO_THREE_TARGET,
+  );
 
   // Xác định trạng thái đạt/không đạt
   const groupOnePass = groupOneEffective >= GROUP_ONE_TARGET && hasRedAddress;
@@ -131,9 +135,9 @@ const fetchStudentsWithScores = async (filters) => {
     studentWhere.lopHoc = {
       nganhHoc: {
         khoa: {
-          maKhoa: facultyCode
-        }
-      }
+          maKhoa: facultyCode,
+        },
+      },
     };
   }
 
@@ -165,12 +169,12 @@ const fetchStudentsWithScores = async (filters) => {
             select: {
               khoa: {
                 select: {
-                  maKhoa: true
-                }
-              }
-            }
-          }
-        }
+                  maKhoa: true,
+                },
+              },
+            },
+          },
+        },
       },
       // Include participations trực tiếp trong query
       dangKy: {
@@ -204,7 +208,7 @@ const fetchStudentsWithScores = async (filters) => {
   // Tính điểm cho từng sinh viên
   return students.map((student) => {
     const studentParticipations = student.dangKy.map((dk) => ({
-      hoatDong: dk.hoatDong
+      hoatDong: dk.hoatDong,
     }));
     const scores = calculateStudentScores(studentParticipations);
 
@@ -231,28 +235,20 @@ const fetchStudentsWithScores = async (filters) => {
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const listStudentsCertifications = async (req, res) => {
-  try {
-    ensureManager(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const listStudentsCertifications = asyncHandler(async (req, res) => {
+  ensureManager(req);
 
   const students = await fetchStudentsWithScores(req.query || {});
   res.json({ students });
-};
+});
 
 /**
  * Xuất danh sách chứng nhận ra file PDF.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const exportCertificationPdf = async (req, res) => {
-  try {
-    ensureManager(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const exportCertificationPdf = asyncHandler(async (req, res) => {
+  ensureManager(req);
 
   const { facultyCode } = req.query || {};
 
@@ -270,23 +266,19 @@ export const exportCertificationPdf = async (req, res) => {
 
   const buffer = await generateCertificationPdf({ students, facultyName });
 
-  const fileName = `ket-qua-chung-nhan-${facultyCode || 'all'}-${Date.now()}.pdf`;
+  const fileName = `ket-qua-chung-nhan-${facultyCode || "all"}-${Date.now()}.pdf`;
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
   res.send(buffer);
-};
+});
 
 /**
  * Xuất danh sách chứng nhận ra file Excel.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const exportCertificationExcel = async (req, res) => {
-  try {
-    ensureManager(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const exportCertificationExcel = asyncHandler(async (req, res) => {
+  ensureManager(req);
 
   const { facultyCode } = req.query || {};
 
@@ -304,9 +296,11 @@ export const exportCertificationExcel = async (req, res) => {
 
   const buffer = generateCertificationExcel({ students, facultyName });
 
-  const fileName = `ket-qua-chung-nhan-${facultyCode || 'all'}-${Date.now()}.xlsx`;
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  const fileName = `ket-qua-chung-nhan-${facultyCode || "all"}-${Date.now()}.xlsx`;
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
   res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
   res.send(buffer);
-};
-
+});

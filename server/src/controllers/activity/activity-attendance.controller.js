@@ -18,8 +18,9 @@ import {
   sanitizeAttendanceEvidence,
   summarizeFaceHistoryRaw,
 } from "../../utils/activity.js";
+import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
-export const markAttendance = async (req, res) => {
+export const markAttendance = asyncHandler(async (req, res) => {
   const userId = req.user?.sub;
   const { id: activityId } = req.params;
   const {
@@ -39,7 +40,9 @@ export const markAttendance = async (req, res) => {
   if (!user) return res.status(404).json({ error: "Người dùng không tồn tại" });
 
   const registration = await prisma.dangKyHoatDong.findUnique({
-    where: { nguoiDungId_hoatDongId: { nguoiDungId: userId, hoatDongId: activityId } },
+    where: {
+      nguoiDungId_hoatDongId: { nguoiDungId: userId, hoatDongId: activityId },
+    },
     include: {
       hoatDong: true,
       lichSuDiemDanh: { orderBy: { taoLuc: "asc" } },
@@ -47,7 +50,9 @@ export const markAttendance = async (req, res) => {
   });
 
   if (!registration || registration.trangThai === "DA_HUY") {
-    return res.status(404).json({ error: "Bạn chưa đăng ký hoạt động này hoặc đã hủy trước đó" });
+    return res
+      .status(404)
+      .json({ error: "Bạn chưa đăng ký hoạt động này hoặc đã hủy trước đó" });
   }
 
   const activity = registration.hoatDong;
@@ -60,18 +65,29 @@ export const markAttendance = async (req, res) => {
   const now = new Date();
 
   if (!startTime) {
-    return res.status(400).json({ error: "Hoạt động chưa có thời gian bắt đầu, không thể điểm danh" });
+    return res
+      .status(400)
+      .json({
+        error: "Hoạt động chưa có thời gian bắt đầu, không thể điểm danh",
+      });
   }
 
   if (now < startTime) {
-    return res.status(400).json({ error: "Hoạt động chưa diễn ra, bạn không thể điểm danh" });
+    return res
+      .status(400)
+      .json({ error: "Hoạt động chưa diễn ra, bạn không thể điểm danh" });
   }
 
   if (endTime && now > endTime) {
-    return res.status(400).json({ error: "Hoạt động đã kết thúc, bạn không thể điểm danh" });
+    return res
+      .status(400)
+      .json({ error: "Hoạt động đã kết thúc, bạn không thể điểm danh" });
   }
 
-  const normalizedPhase = typeof phase === "string" && phase.toLowerCase() === "checkout" ? "checkout" : "checkin";
+  const normalizedPhase =
+    typeof phase === "string" && phase.toLowerCase() === "checkout"
+      ? "checkout"
+      : "checkin";
   const isCheckout = normalizedPhase === "checkout";
 
   const history = registration.lichSuDiemDanh ?? [];
@@ -80,18 +96,28 @@ export const markAttendance = async (req, res) => {
   const hasCheckout = history.some((entry) => entry.loai === "CHECKOUT");
 
   if (!isCheckout && hasCheckin) {
-    return res.status(409).json({ error: "Bạn đã điểm danh đầu giờ cho hoạt động này" });
+    return res
+      .status(409)
+      .json({ error: "Bạn đã điểm danh đầu giờ cho hoạt động này" });
   }
 
   if (isCheckout && !hasCheckin) {
-    return res.status(400).json({ error: "Bạn cần điểm danh đầu giờ trước khi điểm danh cuối giờ" });
+    return res
+      .status(400)
+      .json({
+        error: "Bạn cần điểm danh đầu giờ trước khi điểm danh cuối giờ",
+      });
   }
 
   if (isCheckout && hasCheckout) {
-    return res.status(409).json({ error: "Bạn đã điểm danh cuối giờ cho hoạt động này" });
+    return res
+      .status(409)
+      .json({ error: "Bạn đã điểm danh cuối giờ cho hoạt động này" });
   }
 
-  let faceProfile = await prisma.faceProfile.findUnique({ where: { nguoiDungId: userId } });
+  let faceProfile = await prisma.faceProfile.findUnique({
+    where: { nguoiDungId: userId },
+  });
   if (!faceProfile) {
     return res.status(409).json({
       error:
@@ -106,7 +132,9 @@ export const markAttendance = async (req, res) => {
     storedEvidence = sanitizedEvidence.metadata;
   } else if (sanitizedEvidence.data) {
     if (!isSupabaseConfigured()) {
-      return res.status(500).json({ error: "Dịch vụ lưu trữ chưa được cấu hình" });
+      return res
+        .status(500)
+        .json({ error: "Dịch vụ lưu trữ chưa được cấu hình" });
     }
     try {
       const uploadResult = await uploadBase64Image({
@@ -122,12 +150,16 @@ export const markAttendance = async (req, res) => {
       };
     } catch (error) {
       console.error("Không thể lưu ảnh điểm danh lên Supabase:", error);
-      return res.status(500).json({ error: "Không thể lưu ảnh điểm danh. Vui lòng thử lại." });
+      return res
+        .status(500)
+        .json({ error: "Không thể lưu ảnh điểm danh. Vui lòng thử lại." });
     }
   }
 
   if (!storedEvidence) {
-    return res.status(400).json({ error: "Vui lòng chụp hoặc tải lên ảnh điểm danh." });
+    return res
+      .status(400)
+      .json({ error: "Vui lòng chụp hoặc tải lên ảnh điểm danh." });
   }
 
   let descriptorSource = null;
@@ -145,14 +177,24 @@ export const markAttendance = async (req, res) => {
   }
 
   let faceMatchResult = null;
-  let referenceDescriptors = normalizeDescriptorCollection(faceProfile?.descriptors || []);
+  let referenceDescriptors = normalizeDescriptorCollection(
+    faceProfile?.descriptors || [],
+  );
 
   if (faceError) {
     faceMatchResult = { status: "REVIEW", score: null, reason: "client_error" };
   } else if (!referenceDescriptors.length) {
-    faceMatchResult = { status: "REVIEW", score: null, reason: "empty_profile" };
+    faceMatchResult = {
+      status: "REVIEW",
+      score: null,
+      reason: "empty_profile",
+    };
   } else if (!normalizedDescriptor) {
-    faceMatchResult = { status: "REVIEW", score: null, reason: "missing_descriptor" };
+    faceMatchResult = {
+      status: "REVIEW",
+      score: null,
+      reason: "missing_descriptor",
+    };
   } else {
     faceMatchResult = evaluateFaceMatch({
       descriptor: normalizedDescriptor,
@@ -164,7 +206,10 @@ export const markAttendance = async (req, res) => {
 
   const nextHistory = [
     ...history,
-    { loai: isCheckout ? "CHECKOUT" : "CHECKIN", faceMatch: faceMatchResult?.status ?? null },
+    {
+      loai: isCheckout ? "CHECKOUT" : "CHECKIN",
+      faceMatch: faceMatchResult?.status ?? null,
+    },
   ];
 
   const faceSummary = summarizeFaceHistoryRaw(nextHistory);
@@ -182,7 +227,10 @@ export const markAttendance = async (req, res) => {
   } else if (faceSummary?.approvedCount >= 2) {
     finalStatus = "DA_THAM_GIA";
     entryStatus = "DA_THAM_GIA";
-  } else if (faceSummary?.requiresReview || (faceSummary?.approvedCount || 0) > 0) {
+  } else if (
+    faceSummary?.requiresReview ||
+    (faceSummary?.approvedCount || 0) > 0
+  ) {
     finalStatus = "CHO_DUYET";
     entryStatus = "CHO_DUYET";
   } else {
@@ -255,10 +303,11 @@ export const markAttendance = async (req, res) => {
       notificationAction = "ATTENDED";
       emailSubject = `[HUIT Social Credits] Điểm danh thành công - "${activity.tieuDe}"`;
       emailMessageLines.push(
-        `Điểm danh cho hoạt động "${activity.tieuDe}" đã được ghi nhận thành công và cộng điểm.`
+        `Điểm danh cho hoạt động "${activity.tieuDe}" đã được ghi nhận thành công và cộng điểm.`,
       );
     } else if (finalStatus === "CHO_DUYET") {
-      responseMessage = "Ảnh điểm danh cần xác minh. Vui lòng chờ ban quản trị duyệt.";
+      responseMessage =
+        "Ảnh điểm danh cần xác minh. Vui lòng chờ ban quản trị duyệt.";
       notificationTitle = "Điểm danh đang chờ duyệt";
       notificationMessage = `Hệ thống cần xác minh ảnh điểm danh của bạn cho hoạt động "${activity.tieuDe}".`;
       notificationType = "warning";
@@ -266,11 +315,11 @@ export const markAttendance = async (req, res) => {
       emailSubject = `[HUIT Social Credits] Điểm danh chờ duyệt - \"${activity.tieuDe}\"`;
       if (faceSummary?.approvedCount === 1) {
         emailMessageLines.push(
-          "Hệ thống chỉ nhận diện trùng khớp một trong hai ảnh điểm danh. Ban quản trị sẽ kiểm tra thủ công."
+          "Hệ thống chỉ nhận diện trùng khớp một trong hai ảnh điểm danh. Ban quản trị sẽ kiểm tra thủ công.",
         );
       } else {
         emailMessageLines.push(
-          "Hệ thống chưa thể xác minh tự động ảnh điểm danh. Ban quản trị sẽ kiểm tra thủ công trong thời gian sớm nhất."
+          "Hệ thống chưa thể xác minh tự động ảnh điểm danh. Ban quản trị sẽ kiểm tra thủ công trong thời gian sớm nhất.",
         );
       }
     } else {
@@ -281,19 +330,20 @@ export const markAttendance = async (req, res) => {
       notificationAction = "ABSENT";
       emailSubject = `[HUIT Social Credits] Ghi nhận vắng mặt - "${activity.tieuDe}"`;
       emailMessageLines.push(
-        `Điểm danh cho hoạt động "${activity.tieuDe}" ghi nhận bạn vắng mặt.`
+        `Điểm danh cho hoạt động "${activity.tieuDe}" ghi nhận bạn vắng mặt.`,
       );
     }
   } else {
     if (faceMatchResult?.status === "REVIEW") {
-      responseMessage = "Đã ghi nhận điểm danh đầu giờ, hệ thống đang chờ xác minh khuôn mặt.";
+      responseMessage =
+        "Đã ghi nhận điểm danh đầu giờ, hệ thống đang chờ xác minh khuôn mặt.";
       notificationTitle = "Điểm danh đầu giờ chờ xác minh";
       notificationMessage = `Ảnh điểm danh đầu giờ của bạn cho hoạt động "${activity.tieuDe}" cần được kiểm tra thêm.`;
       notificationType = "warning";
       notificationAction = "CHECKIN_REVIEW";
       emailSubject = `[HUIT Social Credits] Điểm danh đầu giờ chờ xác minh - "${activity.tieuDe}"`;
       emailMessageLines.push(
-        `Hệ thống chưa thể xác nhận tự động ảnh điểm danh đầu giờ cho hoạt động "${activity.tieuDe}". Ban quản trị sẽ xem xét.`
+        `Hệ thống chưa thể xác nhận tự động ảnh điểm danh đầu giờ cho hoạt động "${activity.tieuDe}". Ban quản trị sẽ xem xét.`,
       );
     } else {
       responseMessage = "Điểm danh đầu giờ thành công";
@@ -303,7 +353,7 @@ export const markAttendance = async (req, res) => {
       notificationAction = "CHECKIN";
       emailSubject = `[HUIT Social Credits] Điểm danh đầu giờ - "${activity.tieuDe}"`;
       emailMessageLines.push(
-        `Điểm danh đầu giờ cho hoạt động "${activity.tieuDe}" đã được ghi nhận thành công.`
+        `Điểm danh đầu giờ cho hoạt động "${activity.tieuDe}" đã được ghi nhận thành công.`,
       );
     }
   }
@@ -327,4 +377,4 @@ export const markAttendance = async (req, res) => {
     message: responseMessage,
     activity: updated,
   });
-};
+});

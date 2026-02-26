@@ -1,11 +1,12 @@
 import prisma from "../prisma.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 import {
   CERTIFICATE_TARGETS,
   CERTIFICATE_TOTAL_TARGET,
   DEFAULT_POINT_GROUP,
   POINT_GROUPS,
   getPointGroupLabel,
-  normalizePointGroup
+  normalizePointGroup,
 } from "../utils/points.js";
 import { mapAttendanceMethodToApi } from "../utils/attendance.js";
 
@@ -47,8 +48,12 @@ const sanitizeIdentifier = (value) => {
 
 // Xây dựng bộ lọc báo cáo từ query string
 const buildReportFilters = (query = {}) => {
-  const yearId = sanitizeIdentifier(query.yearId ?? query.namHocId ?? query.year);
-  const semesterId = sanitizeIdentifier(query.semesterId ?? query.hocKyId ?? query.semester);
+  const yearId = sanitizeIdentifier(
+    query.yearId ?? query.namHocId ?? query.year,
+  );
+  const semesterId = sanitizeIdentifier(
+    query.semesterId ?? query.hocKyId ?? query.semester,
+  );
   return { yearId, semesterId };
 };
 
@@ -88,19 +93,19 @@ const safeTrim = (value) => {
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getProgressSummary = async (req, res) => {
+export const getProgressSummary = asyncHandler(async (req, res) => {
   const userId = req.user?.sub;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const [user, registrations] = await Promise.all([
     prisma.nguoiDung.findUnique({
       where: { id: userId },
-      select: { avatarUrl: true }
+      select: { avatarUrl: true },
     }),
     prisma.dangKyHoatDong.findMany({
       where: {
         nguoiDungId: userId,
-        trangThai: "DA_THAM_GIA"
+        trangThai: "DA_THAM_GIA",
       },
       include: {
         hoatDong: {
@@ -108,11 +113,11 @@ export const getProgressSummary = async (req, res) => {
             diemCong: true,
             nhomDiem: true,
             tieuDe: true,
-            moTa: true
-          }
-        }
-      }
-    })
+            moTa: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const pointTotals = PROGRESS_GROUP_KEYS.reduce((acc, key) => {
@@ -144,27 +149,47 @@ export const getProgressSummary = async (req, res) => {
 
   const overflowFromGroupOne = Math.max(groupOneRawPoints - groupOneTarget, 0);
   const groupOneEffectivePoints = Math.min(groupOneRawPoints, groupOneTarget);
-  const groupTwoThreeEffectivePoints = groupTwoRawPoints + groupThreeRawPoints + overflowFromGroupOne;
-  const normalizedGroupTwoThreePoints = Math.min(groupTwoThreeEffectivePoints, groupTwoThreeTarget);
+  const groupTwoThreeEffectivePoints =
+    groupTwoRawPoints + groupThreeRawPoints + overflowFromGroupOne;
+  const normalizedGroupTwoThreePoints = Math.min(
+    groupTwoThreeEffectivePoints,
+    groupTwoThreeTarget,
+  );
 
   const normalizedGroupOnePoints = groupOneEffectivePoints;
   const totalPoints = normalizedGroupOnePoints + normalizedGroupTwoThreePoints;
   const totalTarget = CERTIFICATE_TOTAL_TARGET;
 
-  const groupOneRemaining = Math.max(groupOneTarget - groupOneEffectivePoints, 0);
-  const groupTwoThreeRemaining = Math.max(groupTwoThreeTarget - normalizedGroupTwoThreePoints, 0);
+  const groupOneRemaining = Math.max(
+    groupOneTarget - groupOneEffectivePoints,
+    0,
+  );
+  const groupTwoThreeRemaining = Math.max(
+    groupTwoThreeTarget - normalizedGroupTwoThreePoints,
+    0,
+  );
 
   const groupOneHasRequiredPoints = groupOneEffectivePoints >= groupOneTarget;
-  const groupTwoThreeHasRequiredPoints = groupTwoThreeEffectivePoints >= groupTwoThreeTarget;
+  const groupTwoThreeHasRequiredPoints =
+    groupTwoThreeEffectivePoints >= groupTwoThreeTarget;
   const isQualified =
-    groupOneHasRequiredPoints && groupTwoThreeHasRequiredPoints && hasRedAddressParticipation;
+    groupOneHasRequiredPoints &&
+    groupTwoThreeHasRequiredPoints &&
+    hasRedAddressParticipation;
 
-  const groupOneStatus = groupOneHasRequiredPoints && hasRedAddressParticipation ? "success" : "warning";
-  const groupTwoThreeStatus = groupTwoThreeHasRequiredPoints ? "success" : "warning";
+  const groupOneStatus =
+    groupOneHasRequiredPoints && hasRedAddressParticipation
+      ? "success"
+      : "warning";
+  const groupTwoThreeStatus = groupTwoThreeHasRequiredPoints
+    ? "success"
+    : "warning";
 
   const groupOneNote = (() => {
     if (!groupOneHasRequiredPoints) {
-      return groupOneRemaining > 0 ? `Còn ${groupOneRemaining} điểm` : "Cần hoàn thành điểm nhóm 1";
+      return groupOneRemaining > 0
+        ? `Còn ${groupOneRemaining} điểm`
+        : "Cần hoàn thành điểm nhóm 1";
     }
     if (!hasRedAddressParticipation) {
       return "Tham gia ít nhất 1 hoạt động Địa chỉ đỏ";
@@ -172,7 +197,10 @@ export const getProgressSummary = async (req, res) => {
     return "Hoàn thành";
   })();
 
-  const groupTwoThreeNote = groupTwoThreeRemaining > 0 ? `Còn ${groupTwoThreeRemaining} điểm` : "Hoàn thành";
+  const groupTwoThreeNote =
+    groupTwoThreeRemaining > 0
+      ? `Còn ${groupTwoThreeRemaining} điểm`
+      : "Hoàn thành";
 
   const groups = [
     {
@@ -188,8 +216,8 @@ export const getProgressSummary = async (req, res) => {
         rawPoints: groupOneRawPoints,
         effectivePoints: groupOneEffectivePoints,
         overflowTransferred: overflowFromGroupOne,
-        hasRedAddressParticipation
-      }
+        hasRedAddressParticipation,
+      },
     },
     {
       id: COMBINED_GROUP_KEY,
@@ -203,13 +231,16 @@ export const getProgressSummary = async (req, res) => {
       details: {
         rawGroupTwoPoints: groupTwoRawPoints,
         rawGroupThreePoints: groupThreeRawPoints,
-        overflowFromGroupOne
-      }
-    }
+        overflowFromGroupOne,
+      },
+    },
   ];
 
   const missingPoints = groupOneRemaining + groupTwoThreeRemaining;
-  const percent = totalTarget > 0 ? Math.min(100, Math.round((totalPoints / totalTarget) * 100)) : 0;
+  const percent =
+    totalTarget > 0
+      ? Math.min(100, Math.round((totalPoints / totalTarget) * 100))
+      : 0;
 
   const requirements = {
     isQualified,
@@ -222,7 +253,7 @@ export const getProgressSummary = async (req, res) => {
       effective: groupOneEffectivePoints,
       hasRequiredPoints: groupOneHasRequiredPoints,
       hasRedAddressParticipation,
-      overflowToGroup23: overflowFromGroupOne
+      overflowToGroup23: overflowFromGroupOne,
     },
     groupTwoThree: {
       target: groupTwoThreeTarget,
@@ -230,8 +261,8 @@ export const getProgressSummary = async (req, res) => {
       rawGroupTwoPoints: groupTwoRawPoints,
       rawGroupThreePoints: groupThreeRawPoints,
       hasRequiredPoints: groupTwoThreeHasRequiredPoints,
-      overflowFromGroupOne
-    }
+      overflowFromGroupOne,
+    },
   };
 
   res.json({
@@ -243,10 +274,10 @@ export const getProgressSummary = async (req, res) => {
       groups,
       avatarUrl: user?.avatarUrl ?? null,
       isQualified,
-      requirements
-    }
+      requirements,
+    },
   });
-};
+});
 
 const computePercentChange = (current, previous) => {
   if (!previous) {
@@ -299,7 +330,7 @@ const buildChartData = (activities = []) => {
           label: monthLabel(month),
           group1: entry.group1,
           group2: entry.group2,
-          group3: entry.group3
+          group3: entry.group3,
         });
       }
       chart[year] = rows;
@@ -310,7 +341,9 @@ const buildChartData = (activities = []) => {
 
 const mapUpcomingActivities = (activities = []) =>
   activities.map((activity) => {
-    const attendanceMethod = mapAttendanceMethodToApi(activity.phuongThucDiemDanh);
+    const attendanceMethod = mapAttendanceMethodToApi(
+      activity.phuongThucDiemDanh,
+    );
     return {
       id: activity.id,
       title: activity.tieuDe,
@@ -318,7 +351,7 @@ const mapUpcomingActivities = (activities = []) =>
       startTime: activity.batDauLuc?.toISOString() ?? null,
       attendanceMethod,
       participantsCount: activity._count?.dangKy ?? 0,
-      maxCapacity: activity.sucChuaToiDa ?? null
+      maxCapacity: activity.sucChuaToiDa ?? null,
     };
   });
 
@@ -327,8 +360,9 @@ const mapFeedbackSummaries = (feedbacks = []) =>
     id: feedback.id,
     message: feedback.noiDung,
     submittedAt: feedback.taoLuc?.toISOString() ?? null,
-    name: feedback.nguoiDung?.hoTen ?? feedback.nguoiDung?.email ?? "Người dùng",
-    avatarUrl: feedback.nguoiDung?.avatarUrl ?? null
+    name:
+      feedback.nguoiDung?.hoTen ?? feedback.nguoiDung?.email ?? "Người dùng",
+    avatarUrl: feedback.nguoiDung?.avatarUrl ?? null,
   }));
 
 /**
@@ -336,59 +370,81 @@ const mapFeedbackSummaries = (feedbacks = []) =>
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getAdminDashboardOverview = async (req, res) => {
+export const getAdminDashboardOverview = asyncHandler(async (req, res) => {
   if (req.user?.role !== "ADMIN") {
     return res.status(403).json({ error: "Forbidden" });
   }
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const sixtyDaysAgo = new Date(thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(
+    thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000,
+  );
   const chartStartDate = new Date(now.getFullYear() - 2, 0, 1);
 
   const [
     [totalActivities, totalParticipants, pendingFeedback],
-    [recentActivities, previousActivities, recentParticipants, previousParticipants, recentFeedbacks, previousFeedbacks],
+    [
+      recentActivities,
+      previousActivities,
+      recentParticipants,
+      previousParticipants,
+      recentFeedbacks,
+      previousFeedbacks,
+    ],
     chartSource,
     upcomingActivities,
-    pendingFeedbackList
+    pendingFeedbackList,
   ] = await Promise.all([
     Promise.all([
       prisma.hoatDong.count(),
-      prisma.dangKyHoatDong.count({ where: { trangThai: { in: ACTIVE_REG_STATUSES } } }),
-      prisma.phanHoiHoatDong.count({ where: { trangThai: "CHO_DUYET" } })
+      prisma.dangKyHoatDong.count({
+        where: { trangThai: { in: ACTIVE_REG_STATUSES } },
+      }),
+      prisma.phanHoiHoatDong.count({ where: { trangThai: "CHO_DUYET" } }),
     ]),
     Promise.all([
       prisma.hoatDong.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-      prisma.hoatDong.count({ where: { createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } } }),
-      prisma.dangKyHoatDong.count({ where: { dangKyLuc: { gte: thirtyDaysAgo }, trangThai: { in: ACTIVE_REG_STATUSES } } }),
+      prisma.hoatDong.count({
+        where: { createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      }),
+      prisma.dangKyHoatDong.count({
+        where: {
+          dangKyLuc: { gte: thirtyDaysAgo },
+          trangThai: { in: ACTIVE_REG_STATUSES },
+        },
+      }),
       prisma.dangKyHoatDong.count({
         where: {
           dangKyLuc: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
-          trangThai: { in: ACTIVE_REG_STATUSES }
-        }
+          trangThai: { in: ACTIVE_REG_STATUSES },
+        },
       }),
-      prisma.phanHoiHoatDong.count({ where: { taoLuc: { gte: thirtyDaysAgo } } }),
-      prisma.phanHoiHoatDong.count({ where: { taoLuc: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } } })
+      prisma.phanHoiHoatDong.count({
+        where: { taoLuc: { gte: thirtyDaysAgo } },
+      }),
+      prisma.phanHoiHoatDong.count({
+        where: { taoLuc: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      }),
     ]),
     prisma.hoatDong.findMany({
       where: { batDauLuc: { not: null, gte: chartStartDate } },
-      select: { id: true, nhomDiem: true, batDauLuc: true }
+      select: { id: true, nhomDiem: true, batDauLuc: true },
     }),
     prisma.hoatDong.findMany({
       where: {
         batDauLuc: { gte: now },
-        isPublished: true
+        isPublished: true,
       },
       include: {
         _count: {
           select: {
-            dangKy: { where: { trangThai: { in: ACTIVE_REG_STATUSES } } }
-          }
-        }
+            dangKy: { where: { trangThai: { in: ACTIVE_REG_STATUSES } } },
+          },
+        },
       },
       orderBy: { batDauLuc: "asc" },
-      take: 4
+      take: 4,
     }),
     prisma.phanHoiHoatDong.findMany({
       where: { trangThai: "CHO_DUYET" },
@@ -397,28 +453,31 @@ export const getAdminDashboardOverview = async (req, res) => {
           select: {
             hoTen: true,
             email: true,
-            avatarUrl: true
-          }
-        }
+            avatarUrl: true,
+          },
+        },
       },
       orderBy: { taoLuc: "desc" },
-      take: 5
-    })
+      take: 5,
+    }),
   ]);
 
   const overview = {
     activities: {
       total: totalActivities,
-      changePercent: computePercentChange(recentActivities, previousActivities)
+      changePercent: computePercentChange(recentActivities, previousActivities),
     },
     participants: {
       total: totalParticipants,
-      changePercent: computePercentChange(recentParticipants, previousParticipants)
+      changePercent: computePercentChange(
+        recentParticipants,
+        previousParticipants,
+      ),
     },
     feedbacks: {
       total: pendingFeedback,
-      changePercent: computePercentChange(recentFeedbacks, previousFeedbacks)
-    }
+      changePercent: computePercentChange(recentFeedbacks, previousFeedbacks),
+    },
   };
 
   const chart = buildChartData(chartSource);
@@ -426,14 +485,14 @@ export const getAdminDashboardOverview = async (req, res) => {
   const feedbacks = mapFeedbackSummaries(pendingFeedbackList);
 
   res.json({ overview, chart, upcoming, feedbacks });
-};
+});
 
 /**
  * Lấy báo cáo thống kê chi tiết cho Admin.
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getAdminReportsSummary = async (req, res) => {
+export const getAdminReportsSummary = asyncHandler(async (req, res) => {
   if (req.user?.role !== "ADMIN") {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -449,7 +508,7 @@ export const getAdminReportsSummary = async (req, res) => {
 
   const [years, semesters, participations] = await Promise.all([
     prisma.namHoc.findMany({
-      orderBy: { batDau: "asc" }
+      orderBy: { batDau: "asc" },
     }),
     prisma.hocKy.findMany({
       orderBy: { batDau: "asc" },
@@ -458,13 +517,13 @@ export const getAdminReportsSummary = async (req, res) => {
         ten: true,
         ma: true,
         thuTu: true,
-        namHocId: true
-      }
+        namHocId: true,
+      },
     }),
     prisma.dangKyHoatDong.findMany({
       where: {
         trangThai: "DA_THAM_GIA",
-        hoatDong: activityFilter
+        hoatDong: activityFilter,
       },
       select: {
         id: true,
@@ -482,19 +541,19 @@ export const getAdminReportsSummary = async (req, res) => {
                   select: {
                     khoa: {
                       select: {
-                        maKhoa: true
-                      }
-                    }
-                  }
-                }
-              }
+                        maKhoa: true,
+                      },
+                    },
+                  },
+                },
+              },
             },
             khoa: {
               select: {
-                maKhoa: true
-              }
-            }
-          }
+                maKhoa: true,
+              },
+            },
+          },
         },
         hoatDong: {
           select: {
@@ -504,11 +563,11 @@ export const getAdminReportsSummary = async (req, res) => {
             nhomDiem: true,
             batDauLuc: true,
             namHocId: true,
-            hocKyId: true
-          }
-        }
-      }
-    })
+            hocKyId: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const participantIds = new Set();
@@ -529,8 +588,12 @@ export const getAdminReportsSummary = async (req, res) => {
 
     const numericPoints = Number(activity.diemCong) || 0;
     const classCode = safeTrim(student.lopHoc?.maLop) ?? "Chưa cập nhật";
-    const facultyCode = safeTrim(student.khoa?.maKhoa || student.lopHoc?.nganhHoc?.khoa?.maKhoa) ?? "Chưa cập nhật";
-    const studentName = safeTrim(student.hoTen) ?? safeTrim(student.email) ?? "Sinh viên";
+    const facultyCode =
+      safeTrim(
+        student.khoa?.maKhoa || student.lopHoc?.nganhHoc?.khoa?.maKhoa,
+      ) ?? "Chưa cập nhật";
+    const studentName =
+      safeTrim(student.hoTen) ?? safeTrim(student.email) ?? "Sinh viên";
     const studentId = student.id;
 
     totalPoints += numericPoints;
@@ -543,7 +606,7 @@ export const getAdminReportsSummary = async (req, res) => {
         faculty: facultyCode,
         totalPoints: 0,
         participationCount: 0,
-        studentIds: new Set()
+        studentIds: new Set(),
       });
     }
     const classEntry = classMap.get(classCode);
@@ -560,20 +623,22 @@ export const getAdminReportsSummary = async (req, res) => {
         classCode,
         faculty: facultyCode,
         totalPoints: 0,
-        activityCount: 0
+        activityCount: 0,
       });
     }
     const studentEntry = studentMap.get(studentId);
     studentEntry.totalPoints += numericPoints;
     studentEntry.activityCount += 1;
 
-    const groupKey = normalizePointGroup(activity.nhomDiem ?? DEFAULT_POINT_GROUP);
+    const groupKey = normalizePointGroup(
+      activity.nhomDiem ?? DEFAULT_POINT_GROUP,
+    );
     if (!categoryMap.has(groupKey)) {
       categoryMap.set(groupKey, {
         id: groupKey,
         label: getPointGroupLabel(groupKey),
         totalPoints: 0,
-        activityCount: 0
+        activityCount: 0,
       });
     }
     const categoryEntry = categoryMap.get(groupKey);
@@ -585,7 +650,7 @@ export const getAdminReportsSummary = async (req, res) => {
         faculty: facultyCode,
         totalPoints: 0,
         participationCount: 0,
-        studentIds: new Set()
+        studentIds: new Set(),
       });
     }
     const facultyEntry = facultyMap.get(facultyCode);
@@ -603,7 +668,7 @@ export const getAdminReportsSummary = async (req, res) => {
         totalPoints: 0,
         participantCount: 0,
         yearId: activity.namHocId ?? null,
-        semesterId: activity.hocKyId ?? null
+        semesterId: activity.hocKyId ?? null,
       });
     }
     const activityEntry = activityMap.get(activity.id);
@@ -626,7 +691,7 @@ export const getAdminReportsSummary = async (req, res) => {
           month,
           label: `T${month}/${year}`,
           totalPoints: 0,
-          registrations: 0
+          registrations: 0,
         });
       }
       const bucket = timelineMap.get(key);
@@ -642,7 +707,7 @@ export const getAdminReportsSummary = async (req, res) => {
     averagePointsPerStudent:
       participantIds.size > 0
         ? Math.round((totalPoints / participantIds.size) * 100) / 100
-        : 0
+        : 0,
   };
 
   const classRanking = Array.from(classMap.values())
@@ -655,7 +720,7 @@ export const getAdminReportsSummary = async (req, res) => {
       averagePoints:
         entry.studentIds.size > 0
           ? Math.round((entry.totalPoints / entry.studentIds.size) * 100) / 100
-          : 0
+          : 0,
     }))
     .sort((a, b) => b.totalPoints - a.totalPoints);
 
@@ -665,7 +730,7 @@ export const getAdminReportsSummary = async (req, res) => {
       averagePoints:
         entry.activityCount > 0
           ? Math.round((entry.totalPoints / entry.activityCount) * 100) / 100
-          : 0
+          : 0,
     }))
     .sort((a, b) => b.totalPoints - a.totalPoints)
     .slice(0, 50);
@@ -674,7 +739,9 @@ export const getAdminReportsSummary = async (req, res) => {
     .map((entry) => ({
       ...entry,
       percent:
-        totalPoints > 0 ? Math.round((entry.totalPoints / totalPoints) * 1000) / 10 : 0
+        totalPoints > 0
+          ? Math.round((entry.totalPoints / totalPoints) * 1000) / 10
+          : 0,
     }))
     .sort((a, b) => b.totalPoints - a.totalPoints);
 
@@ -687,7 +754,7 @@ export const getAdminReportsSummary = async (req, res) => {
       averagePoints:
         entry.studentIds.size > 0
           ? Math.round((entry.totalPoints / entry.studentIds.size) * 100) / 100
-          : 0
+          : 0,
     }))
     .sort((a, b) => b.totalPoints - a.totalPoints);
 
@@ -697,7 +764,7 @@ export const getAdminReportsSummary = async (req, res) => {
       averagePointsPerParticipant:
         entry.participantCount > 0
           ? Math.round((entry.totalPoints / entry.participantCount) * 100) / 100
-          : 0
+          : 0,
     }))
     .sort((a, b) => b.totalPoints - a.totalPoints)
     .slice(0, 10);
@@ -713,7 +780,7 @@ export const getAdminReportsSummary = async (req, res) => {
     code: safeTrim(year.ma),
     startDate: year.batDau?.toISOString?.() ?? null,
     endDate: year.ketThuc?.toISOString?.() ?? null,
-    isActive: Boolean(year.isActive)
+    isActive: Boolean(year.isActive),
   }));
 
   const semesterOptions = semesters.map((semester) => ({
@@ -721,7 +788,7 @@ export const getAdminReportsSummary = async (req, res) => {
     label: formatSemesterLabel(semester),
     code: safeTrim(semester.ma),
     order: semester.thuTu ?? null,
-    yearId: semester.namHocId
+    yearId: semester.namHocId,
   }));
 
   res.json({
@@ -735,13 +802,13 @@ export const getAdminReportsSummary = async (req, res) => {
     totals: {
       participants: participantIds.size,
       activities: activityIds.size,
-      records: participations.length
+      records: participations.length,
     },
     filters: {
       years: yearOptions,
       semesters: semesterOptions,
-      applied: filters
+      applied: filters,
     },
-    generatedAt: new Date().toISOString()
+    generatedAt: new Date().toISOString(),
   });
-};
+});

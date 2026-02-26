@@ -8,8 +8,9 @@ import {
   buildActivityResponse,
   sanitizeOptionalText,
 } from "../../utils/activity.js";
+import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
-export const listActivities = async (req, res) => {
+export const listActivities = asyncHandler(async (req, res) => {
   const currentUserId = req.user?.sub;
   const userRole = req.user?.role;
 
@@ -22,27 +23,29 @@ export const listActivities = async (req, res) => {
   }
 
   const searchTerm = sanitizeOptionalText(search, 100);
-  const normalizedPointGroup = isValidPointGroup(pointGroup) ? pointGroup : undefined;
+  const normalizedPointGroup = isValidPointGroup(pointGroup)
+    ? pointGroup
+    : undefined;
 
   // Xây dựng điều kiện lọc cơ bản với tìm kiếm và nhóm điểm
   const baseFilters = {
     ...(normalizedPointGroup ? { nhomDiem: normalizedPointGroup } : {}),
     ...(searchTerm
       ? {
-        OR: [
-          { tieuDe: { contains: searchTerm, mode: "insensitive" } },
-          { diaDiem: { contains: searchTerm, mode: "insensitive" } },
-        ],
-      }
+          OR: [
+            { tieuDe: { contains: searchTerm, mode: "insensitive" } },
+            { diaDiem: { contains: searchTerm, mode: "insensitive" } },
+          ],
+        }
       : {}),
   };
 
   // Áp dụng lọc theo vai trò người dùng
   let where;
-  if (userRole === 'ADMIN') {
+  if (userRole === "ADMIN") {
     // Admin có thể xem tất cả hoạt động
     where = baseFilters;
-  } else if (userRole === 'GIANGVIEN') {
+  } else if (userRole === "GIANGVIEN") {
     // Giảng viên chỉ xem hoạt động do mình tạo (bao gồm cả đang chờ duyệt)
     where = {
       ...baseFilters,
@@ -53,7 +56,7 @@ export const listActivities = async (req, res) => {
     where = {
       ...baseFilters,
       isPublished: true,
-      trangThaiDuyet: 'DA_DUYET',
+      trangThaiDuyet: "DA_DUYET",
     };
   }
 
@@ -75,24 +78,34 @@ export const listActivities = async (req, res) => {
         },
         include: REGISTRATION_INCLUDE,
       }),
-      userRole !== 'ADMIN'
-        ? prisma.faceProfile.findUnique({ where: { nguoiDungId: currentUserId } })
-        : Promise.resolve(null)
+      userRole !== "ADMIN"
+        ? prisma.faceProfile.findUnique({
+            where: { nguoiDungId: currentUserId },
+          })
+        : Promise.resolve(null),
     ]);
-    registrationMap = new Map(registrations.map((registration) => [registration.hoatDongId, registration]));
+    registrationMap = new Map(
+      registrations.map((registration) => [
+        registration.hoatDongId,
+        registration,
+      ]),
+    );
     faceProfileSummary = summarizeFaceProfile(faceProfile);
   }
 
   res.json({
     activities: activities.map((activity) =>
-      mapActivity(activity, registrationMap.get(activity.id), { faceEnrollment: faceProfileSummary })
+      mapActivity(activity, registrationMap.get(activity.id), {
+        faceEnrollment: faceProfileSummary,
+      }),
     ),
   });
-};
+});
 
-export const getActivity = async (req, res) => {
+export const getActivity = asyncHandler(async (req, res) => {
   const currentUserId = req.user?.sub;
   const activity = await buildActivityResponse(req.params.id, currentUserId);
-  if (!activity) return res.status(404).json({ error: "Hoạt động không tồn tại" });
+  if (!activity)
+    return res.status(404).json({ error: "Hoạt động không tồn tại" });
   res.json({ activity });
-};
+});

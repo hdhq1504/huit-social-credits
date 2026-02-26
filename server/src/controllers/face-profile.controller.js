@@ -10,7 +10,11 @@ import {
   removeFiles,
   uploadBase64Image,
 } from "../utils/supabaseStorage.js";
-import { extractStoragePaths, sanitizeStorageList } from "../utils/storageMapper.js";
+import {
+  extractStoragePaths,
+  sanitizeStorageList,
+} from "../utils/storageMapper.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 const MIN_DESCRIPTOR_COUNT = 3;
 const MAX_FACE_SAMPLES = 5;
@@ -34,7 +38,8 @@ const extractSampleDataUrl = (value) => {
     return trimmed.startsWith("data:image") ? trimmed : null;
   }
   if (typeof value === "object") {
-    const dataUrl = typeof value.dataUrl === "string" ? value.dataUrl.trim() : null;
+    const dataUrl =
+      typeof value.dataUrl === "string" ? value.dataUrl.trim() : null;
     return dataUrl && dataUrl.startsWith("data:image") ? dataUrl : null;
   }
   return null;
@@ -87,11 +92,14 @@ const storeFaceSamples = async (userId, dataUrls) => {
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getMyFaceProfile = async (req, res) => {
+export const getMyFaceProfile = asyncHandler(async (req, res) => {
   const userId = req.user?.sub;
-  if (!userId) return res.status(401).json({ error: "Không xác định được người dùng" });
+  if (!userId)
+    return res.status(401).json({ error: "Không xác định được người dùng" });
 
-  const profile = await prisma.faceProfile.findUnique({ where: { nguoiDungId: userId } });
+  const profile = await prisma.faceProfile.findUnique({
+    where: { nguoiDungId: userId },
+  });
   const summary = summarizeFaceProfile(profile);
   const storedSamples = sanitizeFaceSamples(profile?.samples ?? []);
 
@@ -102,32 +110,46 @@ export const getMyFaceProfile = async (req, res) => {
       samples: storedSamples,
     },
   });
-};
+});
 
-export const upsertMyFaceProfile = async (req, res) => {
+export const upsertMyFaceProfile = asyncHandler(async (req, res) => {
   const userId = req.user?.sub;
-  if (!userId) return res.status(401).json({ error: "Không xác định được người dùng" });
+  if (!userId)
+    return res.status(401).json({ error: "Không xác định được người dùng" });
 
   const { descriptors, samples } = req.body || {};
   const normalizedDescriptors = normalizeDescriptorCollection(descriptors);
 
   if (!normalizedDescriptors.length) {
-    return res.status(400).json({ error: "Vui lòng cung cấp ít nhất 1 mẫu khuôn mặt hợp lệ." });
+    return res
+      .status(400)
+      .json({ error: "Vui lòng cung cấp ít nhất 1 mẫu khuôn mặt hợp lệ." });
   }
 
   if (normalizedDescriptors.length < MIN_DESCRIPTOR_COUNT) {
-    return res.status(400).json({ error: `Vui lòng chụp tối thiểu ${MIN_DESCRIPTOR_COUNT} ảnh khuôn mặt rõ nét.` });
+    return res
+      .status(400)
+      .json({
+        error: `Vui lòng chụp tối thiểu ${MIN_DESCRIPTOR_COUNT} ảnh khuôn mặt rõ nét.`,
+      });
   }
 
-  const existing = await prisma.faceProfile.findUnique({ where: { nguoiDungId: userId } });
+  const existing = await prisma.faceProfile.findUnique({
+    where: { nguoiDungId: userId },
+  });
   const existingSamples = sanitizeFaceSamples(existing?.samples ?? []);
 
   const incomingDataUrls = Array.isArray(samples)
-    ? samples.map((item) => extractSampleDataUrl(item)).filter(Boolean).slice(0, MAX_FACE_SAMPLES)
+    ? samples
+        .map((item) => extractSampleDataUrl(item))
+        .filter(Boolean)
+        .slice(0, MAX_FACE_SAMPLES)
     : [];
 
   if (Array.isArray(samples) && samples.length && !incomingDataUrls.length) {
-    return res.status(400).json({ error: "Vui lòng cung cấp ảnh khuôn mặt hợp lệ." });
+    return res
+      .status(400)
+      .json({ error: "Vui lòng cung cấp ảnh khuôn mặt hợp lệ." });
   }
 
   let uploadedSamples = [];
@@ -137,9 +159,16 @@ export const upsertMyFaceProfile = async (req, res) => {
     } catch (error) {
       console.error("Không thể lưu ảnh hồ sơ khuôn mặt:", error);
       if (error.code === "SUPABASE_NOT_CONFIGURED") {
-        return res.status(500).json({ error: "Dịch vụ lưu trữ chưa được cấu hình. Vui lòng liên hệ quản trị viên." });
+        return res
+          .status(500)
+          .json({
+            error:
+              "Dịch vụ lưu trữ chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
+          });
       }
-      return res.status(500).json({ error: "Không thể lưu ảnh khuôn mặt. Vui lòng thử lại." });
+      return res
+        .status(500)
+        .json({ error: "Không thể lưu ảnh khuôn mặt. Vui lòng thử lại." });
     }
   }
 
@@ -153,13 +182,20 @@ export const upsertMyFaceProfile = async (req, res) => {
         : null,
   };
 
-  const cleanupTargets = sanitizedUploadedSamples.length ? extractStoragePaths(existingSamples) : [];
+  const cleanupTargets = sanitizedUploadedSamples.length
+    ? extractStoragePaths(existingSamples)
+    : [];
   let profile;
   try {
     if (existing) {
-      profile = await prisma.faceProfile.update({ where: { id: existing.id }, data: payload });
+      profile = await prisma.faceProfile.update({
+        where: { id: existing.id },
+        data: payload,
+      });
     } else {
-      profile = await prisma.faceProfile.create({ data: { ...payload, nguoiDungId: userId } });
+      profile = await prisma.faceProfile.create({
+        data: { ...payload, nguoiDungId: userId },
+      });
     }
   } catch (error) {
     if (sanitizedUploadedSamples.length) {
@@ -185,4 +221,4 @@ export const upsertMyFaceProfile = async (req, res) => {
       samples: storedSamples,
     },
   });
-};
+});

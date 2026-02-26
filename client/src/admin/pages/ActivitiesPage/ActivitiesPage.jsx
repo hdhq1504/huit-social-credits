@@ -217,17 +217,17 @@ export default function ActivitiesPage() {
       },
       {
         title: 'Học kỳ',
-        dataIndex: 'semesterName',
+        dataIndex: 'semester',
         key: 'semester',
         width: 100,
-        sorter: (a, b) => (a.semesterName || '').localeCompare(b.semesterName || ''),
+        sorter: (a, b) => (a.semester || '').localeCompare(b.semester || ''),
       },
       {
         title: 'Năm học',
-        dataIndex: 'academicYearName',
+        dataIndex: 'academicYear',
         key: 'academicYear',
         width: 120,
-        sorter: (a, b) => (a.academicYearName || '').localeCompare(b.academicYearName || ''),
+        sorter: (a, b) => (a.academicYear || '').localeCompare(b.academicYear || ''),
       },
       {
         title: 'Điểm',

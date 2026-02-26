@@ -1,7 +1,12 @@
 import bcrypt from "bcrypt";
 import prisma from "../prisma.js";
-import { uploadBase64Image, removeFiles, buildPublicUrl } from "../utils/supabaseStorage.js";
+import {
+  uploadBase64Image,
+  removeFiles,
+  buildPublicUrl,
+} from "../utils/supabaseStorage.js";
 import { env } from "../env.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 
 const ROLE_VALUES = new Set(["SINHVIEN", "GIANGVIEN", "ADMIN"]);
 const STATUS_VALUES = new Set(["active", "inactive"]);
@@ -9,15 +14,15 @@ const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 
 const SORTABLE_FIELDS = {
-  createdAt: ['createdAt'],
-  fullName: ['hoTen'],
-  email: ['email'],
-  identifier: ['maSV', 'maCB'],
-  role: ['vaiTro'],
-  departmentCode: ['khoaId', 'lopHocId'],
-  phoneNumber: ['soDT'],
-  isActive: ['isActive'],
-  lastLoginAt: ['lastLoginAt'],
+  createdAt: ["createdAt"],
+  fullName: ["hoTen"],
+  email: ["email"],
+  identifier: ["maSV", "maCB"],
+  role: ["vaiTro"],
+  departmentCode: ["khoaId", "lopHocId"],
+  phoneNumber: ["soDT"],
+  isActive: ["isActive"],
+  lastLoginAt: ["lastLoginAt"],
 };
 
 // Chuẩn hóa chuỗi tìm kiếm
@@ -57,16 +62,16 @@ const normalizePageSize = (value) => {
 
 // Chuẩn hóa trường sắp xếp
 const normalizeSortBy = (value) => {
-  if (!value) return 'createdAt';
+  if (!value) return "createdAt";
   const key = String(value).trim();
-  return SORTABLE_FIELDS[key] ? key : 'createdAt';
+  return SORTABLE_FIELDS[key] ? key : "createdAt";
 };
 
 // Chuẩn hóa chiều sắp xếp
 const normalizeSortOrder = (value) => {
-  if (!value) return 'desc';
+  if (!value) return "desc";
   const normalized = String(value).trim().toLowerCase();
-  return normalized === 'asc' ? 'asc' : 'desc';
+  return normalized === "asc" ? "asc" : "desc";
 };
 
 // Xây dựng điều kiện sắp xếp cho Prisma
@@ -88,8 +93,8 @@ const buildSearchCondition = (search) => {
       { email: { contains: search, mode: "insensitive" } },
       { maSV: { contains: search, mode: "insensitive" } },
       { maCB: { contains: search, mode: "insensitive" } },
-      { soDT: { contains: search, mode: "insensitive" } }
-    ]
+      { soDT: { contains: search, mode: "insensitive" } },
+    ],
   };
 };
 
@@ -157,7 +162,7 @@ const normalizeActiveState = (value, fallback = true) => {
 const assertAdmin = (req) => {
   if (req.user?.role !== "ADMIN") {
     const error = new Error("Forbidden");
-    error.statusCode = 403;
+    error.status = 403;
     throw error;
   }
 };
@@ -167,14 +172,11 @@ const assertAdmin = (req) => {
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const listUsers = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const listUsers = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
-  const { search, role, status, page, pageSize, sortBy, sortOrder } = req.query || {};
+  const { search, role, status, page, pageSize, sortBy, sortOrder } =
+    req.query || {};
   const normalizedSearch = normalizeSearch(search);
   const normalizedRole = normalizeRole(role);
   const normalizedStatus = normalizeStatus(status);
@@ -186,7 +188,9 @@ export const listUsers = async (req, res) => {
 
   const where = {
     ...(normalizedRole ? { vaiTro: normalizedRole } : {}),
-    ...(typeof normalizedStatus === "boolean" ? { isActive: normalizedStatus } : {}),
+    ...(typeof normalizedStatus === "boolean"
+      ? { isActive: normalizedStatus }
+      : {}),
     ...(normalizedSearch ? buildSearchCondition(normalizedSearch) : {}),
   };
 
@@ -213,8 +217,8 @@ export const listUsers = async (req, res) => {
           select: {
             id: true,
             maKhoa: true,
-            tenKhoa: true
-          }
+            tenKhoa: true,
+          },
         },
         lopHoc: {
           select: {
@@ -226,16 +230,16 @@ export const listUsers = async (req, res) => {
                 khoa: {
                   select: {
                     id: true,
-                    maKhoa: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+                    maKhoa: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     }),
-    prisma.nguoiDung.count({ where })
+    prisma.nguoiDung.count({ where }),
   ]);
 
   res.json({
@@ -244,97 +248,97 @@ export const listUsers = async (req, res) => {
       page: currentPage,
       pageSize: take,
       total,
-      pageCount: Math.ceil(total / take) || 0
-    }
+      pageCount: Math.ceil(total / take) || 0,
+    },
   });
-};
+});
 
 /**
  * Lấy thông tin chi tiết người dùng theo ID (Admin).
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const getUserById = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const getUserById = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
   const { id } = req.params;
 
-  try {
-    const user = await prisma.nguoiDung.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        hoTen: true,
-        email: true,
-        vaiTro: true,
-        maSV: true,
-        maCB: true,
-        soDT: true,
-        isActive: true,
-        lastLoginAt: true,
-        createdAt: true,
-        avatarUrl: true,
-        gioiTinh: true,
-        ngaySinh: true,
-        khoa: {
-          select: {
-            id: true,
-            maKhoa: true,
-            tenKhoa: true
-          }
+  const user = await prisma.nguoiDung.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      hoTen: true,
+      email: true,
+      vaiTro: true,
+      maSV: true,
+      maCB: true,
+      soDT: true,
+      isActive: true,
+      lastLoginAt: true,
+      createdAt: true,
+      avatarUrl: true,
+      gioiTinh: true,
+      ngaySinh: true,
+      khoa: {
+        select: {
+          id: true,
+          maKhoa: true,
+          tenKhoa: true,
         },
-        lopHoc: {
-          select: {
-            id: true,
-            maLop: true,
-            tenLop: true,
-            nganhHoc: {
-              select: {
-                id: true,
-                tenNganh: true,
-                khoa: {
-                  select: {
-                    id: true,
-                    tenKhoa: true,
-                    maKhoa: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
+      },
+      lopHoc: {
+        select: {
+          id: true,
+          maLop: true,
+          tenLop: true,
+          nganhHoc: {
+            select: {
+              id: true,
+              tenNganh: true,
+              khoa: {
+                select: {
+                  id: true,
+                  tenKhoa: true,
+                  maKhoa: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
 
-    if (!user) {
-      return res.status(404).json({ error: "Người dùng không tồn tại" });
-    }
-
-    res.json({ user: mapUserForResponse(user) });
-  } catch (error) {
-    console.error("Error fetching user detail:", error);
-    res.status(500).json({ error: error.message || "Không thể lấy thông tin người dùng" });
+  if (!user) {
+    return res.status(404).json({ error: "Người dùng không tồn tại" });
   }
-};
+
+  res.json({ user: mapUserForResponse(user) });
+});
 
 /**
  * Tạo người dùng mới (Admin).
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const createUser = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const createUser = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
-  const { fullName, email, role, password, studentCode, staffCode, lopHocId, facultyId, phoneNumber, isActive, avatarImage, gender, birthday } =
-    req.body || {};
+  const {
+    fullName,
+    email,
+    role,
+    password,
+    studentCode,
+    staffCode,
+    lopHocId,
+    facultyId,
+    phoneNumber,
+    isActive,
+    avatarImage,
+    gender,
+    birthday,
+  } = req.body || {};
 
   const normalizedName = sanitizeString(fullName);
   const normalizedEmail = normalizeEmail(email);
@@ -359,105 +363,112 @@ export const createUser = async (req, res) => {
     return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
   }
 
-  try {
-    const existingUser = await prisma.nguoiDung.findUnique({ where: { email: normalizedEmail } });
-    if (existingUser) {
-      return res.status(409).json({ error: "Email đã tồn tại trong hệ thống" });
-    }
-
-    const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
-
-    const createdUser = await prisma.nguoiDung.create({
-      data: {
-        hoTen: normalizedName,
-        email: normalizedEmail,
-        matKhau: hashedPassword,
-        vaiTro: normalizedRole,
-        gioiTinh: normalizedGender,
-        maSV: normalizedStudentCode,
-        maCB: normalizedStaffCode,
-        lopHoc: lopHocId ? { connect: { id: lopHocId } } : undefined,
-        khoa: facultyId ? { connect: { id: facultyId } } : undefined,
-        soDT: normalizedPhoneNumber,
-        isActive: activeState,
-        ngaySinh: normalizedBirthday,
-      },
-      include: {
-        khoa: true,
-        lopHoc: {
-          select: {
-            id: true,
-            maLop: true,
-            tenLop: true,
-            nganhHoc: {
-              select: {
-                id: true,
-                tenNganh: true,
-                khoa: {
-                  select: {
-                    id: true,
-                    tenKhoa: true,
-                    maKhoa: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    // Xử lý tải lên avatar nếu có
-    if (avatarImage?.dataUrl) {
-      try {
-        const uploadResult = await uploadBase64Image({
-          dataUrl: avatarImage.dataUrl,
-          bucket: env.SUPABASE_AVATAR_BUCKET,
-          pathPrefix: createdUser.id,
-          fileName: avatarImage.fileName || 'avatar',
-        });
-
-        await prisma.nguoiDung.update({
-          where: { id: createdUser.id },
-          data: { avatarUrl: uploadResult.url },
-        });
-      } catch (uploadError) {
-        console.error('Avatar upload failed:', uploadError);
-        // Tiếp tục mà không có avatar nếu tải lên thất bại
-      }
-    }
-
-    res.status(201).json({
-      message: "Thêm người dùng thành công",
-      user: mapUserForResponse(createdUser),
-    });
-  } catch (error) {
-    console.error("Error creating user:", error);
-    res.status(500).json({ error: error.message || "Không thể tạo người dùng" });
+  const existingUser = await prisma.nguoiDung.findUnique({
+    where: { email: normalizedEmail },
+  });
+  if (existingUser) {
+    return res.status(409).json({ error: "Email đã tồn tại trong hệ thống" });
   }
-};
+
+  const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
+
+  const createdUser = await prisma.nguoiDung.create({
+    data: {
+      hoTen: normalizedName,
+      email: normalizedEmail,
+      matKhau: hashedPassword,
+      vaiTro: normalizedRole,
+      gioiTinh: normalizedGender,
+      maSV: normalizedStudentCode,
+      maCB: normalizedStaffCode,
+      lopHoc: lopHocId ? { connect: { id: lopHocId } } : undefined,
+      khoa: facultyId ? { connect: { id: facultyId } } : undefined,
+      soDT: normalizedPhoneNumber,
+      isActive: activeState,
+      ngaySinh: normalizedBirthday,
+    },
+    include: {
+      khoa: true,
+      lopHoc: {
+        select: {
+          id: true,
+          maLop: true,
+          tenLop: true,
+          nganhHoc: {
+            select: {
+              id: true,
+              tenNganh: true,
+              khoa: {
+                select: {
+                  id: true,
+                  tenKhoa: true,
+                  maKhoa: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Xử lý tải lên avatar nếu có
+  if (avatarImage?.dataUrl) {
+    try {
+      const uploadResult = await uploadBase64Image({
+        dataUrl: avatarImage.dataUrl,
+        bucket: env.SUPABASE_AVATAR_BUCKET,
+        pathPrefix: createdUser.id,
+        fileName: avatarImage.fileName || "avatar",
+      });
+
+      await prisma.nguoiDung.update({
+        where: { id: createdUser.id },
+        data: { avatarUrl: uploadResult.url },
+      });
+    } catch (uploadError) {
+      console.error("Avatar upload failed:", uploadError);
+      // Tiếp tục mà không có avatar nếu tải lên thất bại
+    }
+  }
+
+  res.status(201).json({
+    message: "Thêm người dùng thành công",
+    user: mapUserForResponse(createdUser),
+  });
+});
 
 /**
  * Cập nhật thông tin người dùng (Admin).
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const updateUser = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const updateUser = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
   const { id } = req.params;
-  const { fullName, email, role, password, studentCode, staffCode, lopHocId, facultyId, phoneNumber, isActive, avatarImage, gender, birthday } =
-    req.body || {};
+  const {
+    fullName,
+    email,
+    role,
+    password,
+    studentCode,
+    staffCode,
+    lopHocId,
+    facultyId,
+    phoneNumber,
+    isActive,
+    avatarImage,
+    gender,
+    birthday,
+  } = req.body || {};
 
   const normalizedName = sanitizeString(fullName);
   const normalizedEmail = normalizeEmail(email);
   const normalizedRole = normalizeRoleInput(role);
   const normalizedGender = normalizeGender(gender);
-  const normalizedBirthday = birthday !== undefined ? (birthday ? new Date(birthday) : null) : undefined;
+  const normalizedBirthday =
+    birthday !== undefined ? (birthday ? new Date(birthday) : null) : undefined;
   const normalizedStudentCode = sanitizeString(studentCode);
   const normalizedStaffCode = sanitizeString(staffCode);
   const normalizedPhoneNumber = sanitizeString(phoneNumber);
@@ -472,133 +483,142 @@ export const updateUser = async (req, res) => {
     return res.status(400).json({ error: "Email không hợp lệ" });
   }
 
-  try {
-    const existing = await prisma.nguoiDung.findUnique({
-      where: { id },
-      select: { id: true, email: true, avatarUrl: true },
+  const existing = await prisma.nguoiDung.findUnique({
+    where: { id },
+    select: { id: true, email: true, avatarUrl: true },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ error: "Người dùng không tồn tại" });
+  }
+
+  if (normalizedEmail && normalizedEmail !== existing.email) {
+    const emailConflict = await prisma.nguoiDung.findUnique({
+      where: { email: normalizedEmail },
     });
-
-    if (!existing) {
-      return res.status(404).json({ error: "Người dùng không tồn tại" });
+    if (emailConflict) {
+      return res.status(409).json({ error: "Email đã tồn tại trong hệ thống" });
     }
+  }
 
-    if (normalizedEmail && normalizedEmail !== existing.email) {
-      const emailConflict = await prisma.nguoiDung.findUnique({ where: { email: normalizedEmail } });
-      if (emailConflict) {
-        return res.status(409).json({ error: "Email đã tồn tại trong hệ thống" });
+  const updateData = {
+    hoTen: normalizedName,
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
+    ...(normalizedRole ? { vaiTro: normalizedRole } : {}),
+    ...(normalizedGender ? { gioiTinh: normalizedGender } : {}),
+    ...(normalizedBirthday !== undefined
+      ? { ngaySinh: normalizedBirthday }
+      : {}),
+    maSV: normalizedStudentCode ?? null,
+    maCB: normalizedStaffCode ?? null,
+    ...(lopHocId !== undefined
+      ? {
+          lopHoc: lopHocId
+            ? { connect: { id: lopHocId } }
+            : { disconnect: true },
+        }
+      : {}),
+    ...(facultyId !== undefined
+      ? {
+          khoa: facultyId
+            ? { connect: { id: facultyId } }
+            : { disconnect: true },
+        }
+      : {}),
+    soDT: normalizedPhoneNumber ?? null,
+  };
+
+  if (activeState !== undefined) {
+    updateData.isActive = activeState;
+  }
+
+  if (normalizedPassword) {
+    if (normalizedPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
+    }
+    updateData.matKhau = await bcrypt.hash(normalizedPassword, 10);
+  }
+
+  if (avatarImage) {
+    if (avatarImage === null) {
+      if (existing.avatarUrl) {
+        try {
+          const oldPath = existing.avatarUrl.split("/").slice(-2).join("/");
+          await removeFiles(env.SUPABASE_AVATAR_BUCKET, [oldPath]);
+        } catch (cleanupError) {
+          console.error("Failed to cleanup old avatar:", cleanupError);
+        }
       }
-    }
+      updateData.avatarUrl = null;
+    } else if (avatarImage.dataUrl) {
+      try {
+        const uploadResult = await uploadBase64Image({
+          dataUrl: avatarImage.dataUrl,
+          bucket: env.SUPABASE_AVATAR_BUCKET,
+          pathPrefix: id,
+          fileName: avatarImage.fileName || "avatar",
+        });
 
-    const updateData = {
-      hoTen: normalizedName,
-      ...(normalizedEmail ? { email: normalizedEmail } : {}),
-      ...(normalizedRole ? { vaiTro: normalizedRole } : {}),
-      ...(normalizedGender ? { gioiTinh: normalizedGender } : {}),
-      ...(normalizedBirthday !== undefined ? { ngaySinh: normalizedBirthday } : {}),
-      maSV: normalizedStudentCode ?? null,
-      maCB: normalizedStaffCode ?? null,
-      ...(lopHocId !== undefined ? { lopHoc: lopHocId ? { connect: { id: lopHocId } } : { disconnect: true } } : {}),
-      ...(facultyId !== undefined ? { khoa: facultyId ? { connect: { id: facultyId } } : { disconnect: true } } : {}),
-      soDT: normalizedPhoneNumber ?? null,
-    };
-
-    if (activeState !== undefined) {
-      updateData.isActive = activeState;
-    }
-
-    if (normalizedPassword) {
-      if (normalizedPassword.length < 6) {
-        return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
-      }
-      updateData.matKhau = await bcrypt.hash(normalizedPassword, 10);
-    }
-
-    if (avatarImage) {
-      if (avatarImage === null) {
         if (existing.avatarUrl) {
           try {
-            const oldPath = existing.avatarUrl.split('/').slice(-2).join('/');
+            const oldPath = existing.avatarUrl.split("/").slice(-2).join("/");
             await removeFiles(env.SUPABASE_AVATAR_BUCKET, [oldPath]);
           } catch (cleanupError) {
-            console.error('Failed to cleanup old avatar:', cleanupError);
+            console.error("Failed to cleanup old avatar:", cleanupError);
           }
         }
-        updateData.avatarUrl = null;
-      } else if (avatarImage.dataUrl) {
-        try {
-          const uploadResult = await uploadBase64Image({
-            dataUrl: avatarImage.dataUrl,
-            bucket: env.SUPABASE_AVATAR_BUCKET,
-            pathPrefix: id,
-            fileName: avatarImage.fileName || 'avatar',
-          });
 
-          if (existing.avatarUrl) {
-            try {
-              const oldPath = existing.avatarUrl.split('/').slice(-2).join('/');
-              await removeFiles(env.SUPABASE_AVATAR_BUCKET, [oldPath]);
-            } catch (cleanupError) {
-              console.error('Failed to cleanup old avatar:', cleanupError);
-            }
-          }
-
-          updateData.avatarUrl = uploadResult.url;
-        } catch (uploadError) {
-          console.error('Avatar upload failed:', uploadError);
-          return res.status(500).json({ error: 'Không thể upload avatar' });
-        }
+        updateData.avatarUrl = uploadResult.url;
+      } catch (uploadError) {
+        console.error("Avatar upload failed:", uploadError);
+        return res.status(500).json({ error: "Không thể upload avatar" });
       }
     }
-
-    const updatedUser = await prisma.nguoiDung.update({
-      where: { id },
-      data: updateData,
-      include: {
-        khoa: true,
-        lopHoc: {
-          select: {
-            id: true,
-            maLop: true,
-            tenLop: true,
-            nganhHoc: {
-              select: {
-                id: true,
-                tenNganh: true,
-                khoa: {
-                  select: {
-                    id: true,
-                    tenKhoa: true,
-                    maKhoa: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    res.json({ message: "Cập nhật người dùng thành công", user: mapUserForResponse(updatedUser) });
-  } catch (error) {
-    if (error.code === "P2025") {
-      return res.status(404).json({ error: "Người dùng không tồn tại" });
-    }
-    console.error("Error updating user:", error);
-    res.status(500).json({ error: error.message || "Không thể cập nhật người dùng" });
   }
-};
+
+  const updatedUser = await prisma.nguoiDung.update({
+    where: { id },
+    data: updateData,
+    include: {
+      khoa: true,
+      lopHoc: {
+        select: {
+          id: true,
+          maLop: true,
+          tenLop: true,
+          nganhHoc: {
+            select: {
+              id: true,
+              tenNganh: true,
+              khoa: {
+                select: {
+                  id: true,
+                  tenKhoa: true,
+                  maKhoa: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  res.json({
+    message: "Cập nhật người dùng thành công",
+    user: mapUserForResponse(updatedUser),
+  });
+});
 
 /**
  * Xóa người dùng (Admin).
  * @param {Object} req - Express request object.
  * @param {Object} res - Express response object.
  */
-export const deleteUser = async (req, res) => {
-  try {
-    assertAdmin(req);
-  } catch (error) {
-    return res.status(error.statusCode || 500).json({ error: error.message });
-  }
+export const deleteUser = asyncHandler(async (req, res) => {
+  assertAdmin(req);
 
   const { id } = req.params;
 
@@ -609,15 +629,14 @@ export const deleteUser = async (req, res) => {
     if (error.code === "P2025") {
       return res.status(404).json({ error: "Người dùng không tồn tại" });
     }
-    console.error("Error deleting user:", error);
-    res.status(500).json({ error: error.message || "Không thể xóa người dùng" });
+    throw error;
   }
-};
+});
 
 export default {
   listUsers,
   getUserById,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
 };

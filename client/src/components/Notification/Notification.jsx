@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import classNames from 'classnames/bind';
 import { notification as antdNotification } from 'antd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -8,6 +8,8 @@ import {
   faCheck,
   faFileCircleCheck,
   faTriangleExclamation,
+  faChevronDown,
+  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import styles from './Notification.module.scss';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +20,8 @@ import notificationsApi, {
 import useAuthStore from '@stores/useAuthStore';
 
 const cx = classNames.bind(styles);
+
+const PAGE_SIZE = 10;
 
 /** Map icon theo loại thông báo */
 const TYPE_ICON = {
@@ -66,7 +70,8 @@ const formatRelativeTime = (value) => {
 
 /**
  * Component hiển thị danh sách thông báo của người dùng.
- * Hỗ trợ đánh dấu tất cả đã đọc và hiển thị thời gian tương đối.
+ * Hỗ trợ đánh dấu tất cả đã đọc, hiển thị thời gian tương đối,
+ * và phân trang với nút "Xem thêm".
  *
  * @param {Object} props - Props của component.
  * @param {Function} [props.onMarkAllRead] - Callback khi đánh dấu tất cả đã đọc thành công.
@@ -76,17 +81,32 @@ function Notification({ onMarkAllRead }) {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const queryClient = useQueryClient();
 
-  // Query lấy danh sách thông báo (tối đa 30)
+  // State cho pagination
+  const [allNotifications, setAllNotifications] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Query lấy danh sách thông báo ban đầu (tối đa PAGE_SIZE)
   const {
-    data: notifications = [],
+    data: queryData,
     isLoading,
     isError,
   } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
-    queryFn: () => notificationsApi.list({ limit: 30 }),
-    enabled: isLoggedIn, // Chỉ fetch khi đã đăng nhập
-    staleTime: 30_000, // Cache 30 giây
+    queryFn: () => notificationsApi.list({ limit: PAGE_SIZE }),
+    enabled: isLoggedIn,
+    staleTime: 30_000,
   });
+
+  // Sync query data vào local state khi data thay đổi (initial load / refetch)
+  useEffect(() => {
+    if (queryData) {
+      setAllNotifications(queryData.notifications);
+      setHasMore(queryData.hasMore);
+      setNextCursor(queryData.nextCursor);
+    }
+  }, [queryData]);
 
   /**
    * Mutation đánh dấu tất cả thông báo là đã đọc.
@@ -95,7 +115,6 @@ function Notification({ onMarkAllRead }) {
   const markAllMutation = useMutation({
     mutationFn: () => notificationsApi.markAllRead(),
     onSuccess: () => {
-      // Refresh lại danh sách thông báo và badge count
       queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY });
       onMarkAllRead?.();
@@ -114,11 +133,11 @@ function Notification({ onMarkAllRead }) {
   // Transform data: thêm timeAgo cho mỗi notification
   const items = useMemo(
     () =>
-      notifications.map((notification) => ({
+      allNotifications.map((notification) => ({
         ...notification,
         timeAgo: formatRelativeTime(notification.createdAt),
       })),
-    [notifications],
+    [allNotifications],
   );
 
   /**
@@ -129,6 +148,32 @@ function Notification({ onMarkAllRead }) {
     if (!items.length || markAllMutation.isPending) return;
     markAllMutation.mutate();
   };
+
+  /**
+   * Handler load thêm thông báo.
+   * Sử dụng cursor để lấy batch tiếp theo.
+   */
+  const handleLoadMore = useCallback(async () => {
+    if (!hasMore || !nextCursor || isLoadingMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      const data = await notificationsApi.list({ limit: PAGE_SIZE, cursor: nextCursor });
+      setAllNotifications((prev) => [...prev, ...data.notifications]);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor);
+    } catch {
+      antdNotification.open({
+        message: 'Không thể tải thêm thông báo',
+        description: 'Vui lòng thử lại sau.',
+        placement: 'topRight',
+        icon: <FontAwesomeIcon icon={faTriangleExclamation} />,
+        duration: 2.2,
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [hasMore, nextCursor, isLoadingMore]);
 
   return (
     <div className={cx('notification')}>
@@ -160,8 +205,14 @@ function Notification({ onMarkAllRead }) {
         )}
 
         {isLoggedIn &&
-          items.map((n) => (
-            <div key={n.id} className={cx('notification__item', { 'notification__item--unread': n.isUnread })}>
+          items.map((n, index) => (
+            <div
+              key={n.id}
+              className={cx('notification__item', {
+                'notification__item--unread': n.isUnread,
+                'notification__item--last': !hasMore && index === items.length - 1,
+              })}
+            >
               <div className={cx('notification__icon-wrap', `notification__icon-wrap--${n.type}`)}>
                 <FontAwesomeIcon icon={TYPE_ICON[n.type] || faFileCircleCheck} />
               </div>
@@ -173,6 +224,27 @@ function Notification({ onMarkAllRead }) {
               </div>
             </div>
           ))}
+
+        {isLoggedIn && hasMore && (
+          <button
+            type="button"
+            className={cx('notification__load-more')}
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+          >
+            {isLoadingMore ? (
+              <>
+                <FontAwesomeIcon icon={faSpinner} spin />
+                Đang tải...
+              </>
+            ) : (
+              <>
+                <FontAwesomeIcon icon={faChevronDown} />
+                Xem thêm
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

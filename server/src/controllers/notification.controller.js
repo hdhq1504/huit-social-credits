@@ -9,7 +9,7 @@ const mapNotification = (notification) => ({
   isUnread: !notification.daDoc,
   createdAt: notification.createdAt?.toISOString() ?? null,
   readAt: notification.daDocLuc?.toISOString() ?? null,
-  data: notification.duLieu ?? null
+  data: notification.duLieu ?? null,
 });
 
 /**
@@ -22,15 +22,34 @@ export const listNotifications = async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const rawLimit = Number(req.query?.limit);
-  const limit = Math.min(100, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 20));
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 10),
+  );
+  const cursor = req.query?.cursor;
 
-  const notifications = await prisma.thongBao.findMany({
+  const queryOptions = {
     where: { nguoiDungId: userId },
     orderBy: { createdAt: "desc" },
-    take: limit
-  });
+    take: limit + 1, // Fetch one extra to check if there are more
+  };
 
-  res.json({ notifications: notifications.map(mapNotification) });
+  if (cursor) {
+    queryOptions.cursor = { id: cursor };
+    queryOptions.skip = 1; // Skip the cursor item itself
+  }
+
+  const notifications = await prisma.thongBao.findMany(queryOptions);
+
+  const hasMore = notifications.length > limit;
+  const items = hasMore ? notifications.slice(0, limit) : notifications;
+  const nextCursor = hasMore ? (items[items.length - 1]?.id ?? null) : null;
+
+  res.json({
+    notifications: items.map(mapNotification),
+    hasMore,
+    nextCursor,
+  });
 };
 
 /**
@@ -43,7 +62,7 @@ export const getUnreadNotificationCount = async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const count = await prisma.thongBao.count({
-    where: { nguoiDungId: userId, daDoc: false }
+    where: { nguoiDungId: userId, daDoc: false },
   });
 
   res.json({ count });
@@ -61,7 +80,7 @@ export const markAllNotificationsRead = async (req, res) => {
   const now = new Date();
   const result = await prisma.thongBao.updateMany({
     where: { nguoiDungId: userId, daDoc: false },
-    data: { daDoc: true, daDocLuc: now }
+    data: { daDoc: true, daDocLuc: now },
   });
 
   res.json({ updated: result.count });
@@ -70,5 +89,5 @@ export const markAllNotificationsRead = async (req, res) => {
 export default {
   listNotifications,
   getUnreadNotificationCount,
-  markAllNotificationsRead
+  markAllNotificationsRead,
 };

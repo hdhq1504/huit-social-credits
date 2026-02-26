@@ -1,12 +1,16 @@
 import sanitizeHtml from "sanitize-html";
 import prisma from "../prisma.js";
 import { env } from "../env.js";
-import { getPointGroupLabel, normalizePointGroup, isValidPointGroup } from "./points.js";
+import {
+  getPointGroupLabel,
+  normalizePointGroup,
+  isValidPointGroup,
+} from "./points.js";
 import { deriveSemesterInfo } from "./academic.js";
 import {
   getAttendanceMethodLabel,
   getDefaultAttendanceMethod,
-  mapAttendanceMethodToApi
+  mapAttendanceMethodToApi,
 } from "./attendance.js";
 import { summarizeFaceProfile } from "./face.js";
 import { uploadBase64Image, isSupabaseConfigured } from "./supabaseStorage.js";
@@ -65,13 +69,24 @@ const normalizeAcademicYearLabel = (value) => {
   return null;
 };
 
-const ACTIVE_REG_STATUSES = ["DANG_KY", "DANG_THAM_GIA", "DA_THAM_GIA", "CHO_DUYET"];
-const REGISTRATION_STATUSES = ["DANG_KY", "DA_HUY", "DA_THAM_GIA", "VANG_MAT", "CHO_DUYET"];
+const ACTIVE_REG_STATUSES = [
+  "DANG_KY",
+  "DANG_THAM_GIA",
+  "DA_THAM_GIA",
+  "CHO_DUYET",
+];
+const REGISTRATION_STATUSES = [
+  "DANG_KY",
+  "DA_HUY",
+  "DA_THAM_GIA",
+  "VANG_MAT",
+  "CHO_DUYET",
+];
 const FEEDBACK_STATUSES = ["CHO_DUYET", "DA_DUYET", "BI_TU_CHOI"];
 const FEEDBACK_STATUS_LABELS = {
   CHO_DUYET: "Chờ duyệt",
   DA_DUYET: "Đã duyệt",
-  BI_TU_CHOI: "Bị từ chối"
+  BI_TU_CHOI: "Bị từ chối",
 };
 
 /**
@@ -139,19 +154,19 @@ const USER_PUBLIC_FIELDS = {
           khoa: {
             select: {
               maKhoa: true,
-              tenKhoa: true
-            }
-          }
-        }
-      }
-    }
+              tenKhoa: true,
+            },
+          },
+        },
+      },
+    },
   },
   khoa: {
     select: {
       maKhoa: true,
-      tenKhoa: true
-    }
-  }
+      tenKhoa: true,
+    },
+  },
 };
 
 const ACTIVITY_INCLUDE = {
@@ -159,10 +174,10 @@ const ACTIVITY_INCLUDE = {
     where: { trangThai: { in: ACTIVE_REG_STATUSES } },
     include: {
       nguoiDung: {
-        select: USER_PUBLIC_FIELDS
-      }
+        select: USER_PUBLIC_FIELDS,
+      },
     },
-    orderBy: { dangKyLuc: "asc" }
+    orderBy: { dangKyLuc: "asc" },
   },
   phanHoi: {
     include: {
@@ -181,30 +196,30 @@ const ACTIVITY_INCLUDE = {
                   khoa: {
                     select: {
                       maKhoa: true,
-                      tenKhoa: true
-                    }
-                  }
-                }
-              }
-            }
+                      tenKhoa: true,
+                    },
+                  },
+                },
+              },
+            },
           },
           khoa: {
             select: {
               maKhoa: true,
-              tenKhoa: true
-            }
-          }
-        }
-      }
+              tenKhoa: true,
+            },
+          },
+        },
+      },
     },
-    orderBy: { taoLuc: "desc" }
+    orderBy: { taoLuc: "desc" },
   },
   hocKyRef: {
     include: {
-      namHoc: true
-    }
+      namHoc: true,
+    },
   },
-  namHocRef: true
+  namHocRef: true,
 };
 
 const REGISTRATION_INCLUDE = {
@@ -213,12 +228,12 @@ const REGISTRATION_INCLUDE = {
     select: {
       id: true,
       hoTen: true,
-      email: true
-    }
+      email: true,
+    },
   },
   lichSuDiemDanh: {
-    orderBy: { taoLuc: "asc" }
-  }
+    orderBy: { taoLuc: "asc" },
+  },
 };
 
 const ADMIN_STUDENT_FIELDS = {
@@ -236,25 +251,25 @@ const ADMIN_STUDENT_FIELDS = {
           khoa: {
             select: {
               maKhoa: true,
-              tenKhoa: true
-            }
-          }
-        }
-      }
-    }
+              tenKhoa: true,
+            },
+          },
+        },
+      },
+    },
   },
   khoa: {
     select: {
       maKhoa: true,
-      tenKhoa: true
-    }
-  }
+      tenKhoa: true,
+    },
+  },
 };
 
 const ADMIN_REGISTRATION_INCLUDE = {
   ...REGISTRATION_INCLUDE,
   nguoiDung: {
-    select: ADMIN_STUDENT_FIELDS
+    select: ADMIN_STUDENT_FIELDS,
   },
   hoatDong: {
     select: {
@@ -267,8 +282,8 @@ const ADMIN_REGISTRATION_INCLUDE = {
       diaDiem: true,
       phuongThucDiemDanh: true,
       sucChuaToiDa: true, // Số lượng tối đa cho phép tham gia
-    }
-  }
+    },
+  },
 };
 
 const REGISTRATION_STATUS_LABELS = {
@@ -276,7 +291,7 @@ const REGISTRATION_STATUS_LABELS = {
   DA_THAM_GIA: "Đã duyệt",
   VANG_MAT: "Vắng mặt",
   DA_HUY: "Đã hủy",
-  CHO_DUYET: "Chờ duyệt điểm danh"
+  CHO_DUYET: "Chờ duyệt điểm danh",
 };
 
 const ATTENDANCE_STATUS_LABELS = {
@@ -285,7 +300,7 @@ const ATTENDANCE_STATUS_LABELS = {
   DA_THAM_GIA: "Đúng giờ",
   VANG_MAT: "Vắng mặt",
   DA_HUY: "Đã hủy",
-  CHO_DUYET: "Chờ duyệt"
+  CHO_DUYET: "Chờ duyệt",
 };
 
 const FACE_MATCH_LABELS = {
@@ -295,18 +310,18 @@ const FACE_MATCH_LABELS = {
 
 const summarizeFaceHistoryRaw = (entries = []) => {
   const relevant = entries.filter(
-    (entry) => entry && (entry.loai === "CHECKIN" || entry.loai === "CHECKOUT")
+    (entry) => entry && (entry.loai === "CHECKIN" || entry.loai === "CHECKOUT"),
   );
   const statuses = relevant.map((entry) => entry.faceMatch ?? null);
-  const approvedCount = statuses.filter((status) => status === "APPROVED").length;
+  const approvedCount = statuses.filter(
+    (status) => status === "APPROVED",
+  ).length;
   const reviewCount = statuses.filter((status) => status === "REVIEW").length;
   const missingCount = statuses.filter((status) => status === null).length;
   const hasCheckin = relevant.some((entry) => entry.loai === "CHECKIN");
   const hasCheckout = relevant.some((entry) => entry.loai === "CHECKOUT");
   const requiresReview =
-    reviewCount > 0 ||
-    missingCount > 0 ||
-    (hasCheckout && approvedCount === 1);
+    reviewCount > 0 || missingCount > 0 || (hasCheckout && approvedCount === 1);
 
   return {
     approvedCount,
@@ -320,10 +335,13 @@ const summarizeFaceHistoryRaw = (entries = []) => {
 
 const summarizeFaceHistoryMapped = (entries = []) => {
   const relevant = entries.filter(
-    (entry) => entry && (entry.phase === "checkin" || entry.phase === "checkout")
+    (entry) =>
+      entry && (entry.phase === "checkin" || entry.phase === "checkout"),
   );
   const statuses = relevant.map((entry) => entry.faceMatch ?? null);
-  const approvedCount = statuses.filter((status) => status === "APPROVED").length;
+  const approvedCount = statuses.filter(
+    (status) => status === "APPROVED",
+  ).length;
   const reviewCount = statuses.filter((status) => status === "REVIEW").length;
   const missingCount = statuses.filter((status) => status === null).length;
   const hasCheckin = relevant.some((entry) => entry.phase === "checkin");
@@ -347,7 +365,7 @@ const ADMIN_STATUS_MAP = {
   pending: "DANG_KY",
   approved: "DA_THAM_GIA",
   rejected: "VANG_MAT",
-  canceled: "DA_HUY"
+  canceled: "DA_HUY",
 };
 
 const normalizePageNumber = (value) => {
@@ -357,7 +375,8 @@ const normalizePageNumber = (value) => {
 
 const normalizePageSize = (value) => {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_REGISTRATION_PAGE_SIZE;
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    return DEFAULT_REGISTRATION_PAGE_SIZE;
   return Math.min(parsed, MAX_REGISTRATION_PAGE_SIZE);
 };
 
@@ -368,12 +387,12 @@ const formatDateRange = (start, end) => {
   const dateFormatter = new Intl.DateTimeFormat("vi-VN", {
     day: "2-digit",
     month: "2-digit",
-    year: "numeric"
+    year: "numeric",
   });
   const timeFormatter = new Intl.DateTimeFormat("vi-VN", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false
+    hour12: false,
   });
 
   if (!start) {
@@ -400,12 +419,20 @@ const mapStudentProfile = (user, { includeContact = false } = {}) => {
   if (!user) return null;
   const base = {
     id: user.id,
-    name: sanitizeOptionalText(user.hoTen) || sanitizeOptionalText(user.email) || "Người dùng",
+    name:
+      sanitizeOptionalText(user.hoTen) ||
+      sanitizeOptionalText(user.email) ||
+      "Người dùng",
     email: user.email ?? null,
     avatarUrl: user.avatarUrl ?? null,
     studentCode: user.maSV ?? null,
-    faculty: user.khoa?.tenKhoa || user.lopHoc?.nganhHoc?.khoa?.tenKhoa || user.khoa?.maKhoa || user.lopHoc?.nganhHoc?.khoa?.maKhoa || null,
-    className: user.lopHoc?.maLop || null
+    faculty:
+      user.khoa?.tenKhoa ||
+      user.lopHoc?.nganhHoc?.khoa?.tenKhoa ||
+      user.khoa?.maKhoa ||
+      user.lopHoc?.nganhHoc?.khoa?.maKhoa ||
+      null,
+    className: user.lopHoc?.maLop || null,
   };
 
   if (includeContact) {
@@ -460,7 +487,7 @@ const sanitizeStringArray = (value, maxLength = 500) => {
 const assertAdmin = (req) => {
   if (req.user?.role !== "ADMIN") {
     const error = new Error("Forbidden");
-    error.statusCode = 403;
+    error.status = 403;
     throw error;
   }
 };
@@ -472,8 +499,8 @@ const buildRegistrationSearchCondition = (searchTerm) => {
       { nguoiDung: { hoTen: { contains: searchTerm, mode: "insensitive" } } },
       { nguoiDung: { email: { contains: searchTerm, mode: "insensitive" } } },
       { nguoiDung: { maSV: { contains: searchTerm, mode: "insensitive" } } },
-      { hoatDong: { tieuDe: { contains: searchTerm, mode: "insensitive" } } }
-    ]
+      { hoatDong: { tieuDe: { contains: searchTerm, mode: "insensitive" } } },
+    ],
   };
 };
 
@@ -490,8 +517,8 @@ const RICH_TEXT_ALLOWED_TAGS = Array.from(
     "figure",
     "figcaption",
     "span",
-    "p"
-  ])
+    "p",
+  ]),
 );
 
 const RICH_TEXT_ALLOWED_ATTRIBUTES = {
@@ -509,7 +536,7 @@ const RICH_TEXT_ALLOWED_ATTRIBUTES = {
   h3: ["class"],
   h4: ["class"],
   h5: ["class"],
-  h6: ["class"]
+  h6: ["class"],
 };
 
 const sanitizeRichText = (value, maxLength = 20_000) => {
@@ -517,16 +544,20 @@ const sanitizeRichText = (value, maxLength = 20_000) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  const limited = trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
+  const limited =
+    trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
   return sanitizeHtml(limited, {
     allowedTags: RICH_TEXT_ALLOWED_TAGS,
     allowedAttributes: RICH_TEXT_ALLOWED_ATTRIBUTES,
     allowedSchemesByTag: {
-      img: ["data", "http", "https"]
+      img: ["data", "http", "https"],
     },
     transformTags: {
-      a: sanitizeHtml.simpleTransform("a", { target: "_blank", rel: "noopener noreferrer" })
-    }
+      a: sanitizeHtml.simpleTransform("a", {
+        target: "_blank",
+        rel: "noopener noreferrer",
+      }),
+    },
   });
 };
 
@@ -565,12 +596,18 @@ const sanitizeAttendanceEvidence = (value) => {
         : null;
   const data = rawData?.trim();
 
-  if (!data || data.length > MAX_ATTENDANCE_EVIDENCE_SIZE || !data.startsWith("data:")) {
+  if (
+    !data ||
+    data.length > MAX_ATTENDANCE_EVIDENCE_SIZE ||
+    !data.startsWith("data:")
+  ) {
     return { data: null, mimeType: null, fileName: null, metadata: null };
   }
 
-  const mimeType = typeof value.mimeType === "string" ? value.mimeType.slice(0, 100) : null;
-  const fileName = typeof value.fileName === "string" ? value.fileName.slice(0, 255) : null;
+  const mimeType =
+    typeof value.mimeType === "string" ? value.mimeType.slice(0, 100) : null;
+  const fileName =
+    typeof value.fileName === "string" ? value.fileName.slice(0, 255) : null;
 
   return { data, mimeType, fileName, metadata: null };
 };
@@ -590,9 +627,11 @@ const mapAttendanceEntry = (entry) => {
     attachmentMimeType: attachmentMeta?.mimeType ?? null,
     attachmentFileName: attachmentMeta?.fileName ?? null,
     faceMatch: entry.faceMatch ?? null,
-    faceMatchLabel: entry.faceMatch ? FACE_MATCH_LABELS[entry.faceMatch] || entry.faceMatch : null,
+    faceMatchLabel: entry.faceMatch
+      ? FACE_MATCH_LABELS[entry.faceMatch] || entry.faceMatch
+      : null,
     faceScore: entry.faceScore ?? null,
-    faceMeta: entry.faceMeta ?? null
+    faceMeta: entry.faceMeta ?? null,
   };
 };
 
@@ -601,12 +640,13 @@ const mapFeedback = (feedback) => {
   return {
     id: feedback.id,
     status: feedback.trangThai,
-    statusLabel: FEEDBACK_STATUS_LABELS[feedback.trangThai] || feedback.trangThai,
+    statusLabel:
+      FEEDBACK_STATUS_LABELS[feedback.trangThai] || feedback.trangThai,
     content: feedback.noiDung,
     attachments: normalizeAttachments(feedback.minhChung),
     rejectedReason: feedback.lydoTuChoi ?? null,
     submittedAt: feedback.taoLuc?.toISOString() ?? null,
-    updatedAt: feedback.capNhatLuc?.toISOString() ?? null
+    updatedAt: feedback.capNhatLuc?.toISOString() ?? null,
   };
 };
 
@@ -623,7 +663,9 @@ const computeFeedbackWindow = (activity, registration) => {
     ? new Date(registration.duyetLuc)
     : registration?.diemDanhLuc
       ? new Date(registration.diemDanhLuc)
-      : toDate(activity?.ketThucLuc) || toDate(activity?.batDauLuc) || new Date();
+      : toDate(activity?.ketThucLuc) ||
+        toDate(activity?.batDauLuc) ||
+        new Date();
 
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   // const start = new Date(baseTime.getTime() + ONE_DAY_MS);
@@ -637,8 +679,12 @@ const mapRegistration = (registration, activity) => {
   const attendanceHistory = (registration.lichSuDiemDanh ?? [])
     .map((entry) => mapAttendanceEntry(entry))
     .filter(Boolean);
-  const hasCheckin = attendanceHistory.some((entry) => entry.phase === "checkin");
-  const hasCheckout = attendanceHistory.some((entry) => entry.phase === "checkout");
+  const hasCheckin = attendanceHistory.some(
+    (entry) => entry.phase === "checkin",
+  );
+  const hasCheckout = attendanceHistory.some(
+    (entry) => entry.phase === "checkout",
+  );
   const checkoutAvailableAt = computeCheckoutAvailableAt(activity);
   const feedbackWindow = computeFeedbackWindow(activity, registration);
   const faceSummary = summarizeFaceHistoryMapped(attendanceHistory);
@@ -647,7 +693,9 @@ const mapRegistration = (registration, activity) => {
     activityId: registration.hoatDongId,
     userId: registration.nguoiDungId,
     status: registration.trangThai,
-    statusLabel: REGISTRATION_STATUS_LABELS[registration.trangThai] || registration.trangThai,
+    statusLabel:
+      REGISTRATION_STATUS_LABELS[registration.trangThai] ||
+      registration.trangThai,
     note: registration.ghiChu ?? null,
     cancelReason: registration.lyDoHuy ?? null,
     registeredAt: registration.dangKyLuc?.toISOString() ?? null,
@@ -657,9 +705,12 @@ const mapRegistration = (registration, activity) => {
     checkInNote: registration.diemDanhGhiChu ?? null,
     checkInBy: registration.diemDanhBoi
       ? {
-        id: registration.diemDanhBoi.id,
-        name: registration.diemDanhBoi.hoTen ?? registration.diemDanhBoi.email ?? "Người dùng"
-      }
+          id: registration.diemDanhBoi.id,
+          name:
+            registration.diemDanhBoi.hoTen ??
+            registration.diemDanhBoi.email ??
+            "Người dùng",
+        }
       : null,
     attendanceHistory,
     attendanceSummary: {
@@ -669,12 +720,14 @@ const mapRegistration = (registration, activity) => {
       checkoutAvailableAt,
       feedbackWindow: {
         start: feedbackWindow.start.toISOString(),
-        end: feedbackWindow.end.toISOString()
+        end: feedbackWindow.end.toISOString(),
       },
-      face: faceSummary
+      face: faceSummary,
     },
     feedback: mapFeedback(registration.phanHoi),
-    student: mapStudentProfile(registration.nguoiDung, { includeContact: true })
+    student: mapStudentProfile(registration.nguoiDung, {
+      includeContact: true,
+    }),
   };
 };
 
@@ -697,11 +750,11 @@ const processActivityCover = async ({ activityId, payload, existing }) => {
   const removalCandidates =
     sanitizedExisting && sanitizedExisting.path
       ? [
-        {
-          bucket: sanitizedExisting.bucket || env.SUPABASE_ACTIVITY_BUCKET,
-          path: sanitizedExisting.path,
-        },
-      ]
+          {
+            bucket: sanitizedExisting.bucket || env.SUPABASE_ACTIVITY_BUCKET,
+            path: sanitizedExisting.path,
+          },
+        ]
       : [];
 
   if (payload === null) {
@@ -711,7 +764,11 @@ const processActivityCover = async ({ activityId, payload, existing }) => {
     };
   }
 
-  if (payload && typeof payload === "object" && typeof payload.dataUrl === "string") {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    typeof payload.dataUrl === "string"
+  ) {
     if (!isSupabaseConfigured()) {
       const error = new Error("Dịch vụ lưu trữ chưa được cấu hình");
       error.code = "SUPABASE_NOT_CONFIGURED";
@@ -807,7 +864,9 @@ const determineState = (activity, registration) => {
       const feedback = registration.phanHoi;
       if (!feedback) {
         const history = registration.lichSuDiemDanh || [];
-        const hasFaceIssue = history.some((entry) => entry.faceMatch === "REVIEW");
+        const hasFaceIssue = history.some(
+          (entry) => entry.faceMatch === "REVIEW",
+        );
 
         if (!hasFaceIssue) {
           return "attendance_review";
@@ -870,9 +929,11 @@ const mapActivity = (activity, registration, options = {}) => {
   const semesterRef = activity.hocKyRef ?? null;
   const academicYearRef = semesterRef?.namHoc ?? activity.namHocRef ?? null;
   const defaultAttendanceMethod = getDefaultAttendanceMethod();
-  const attendanceSource = activity.phuongThucDiemDanh || defaultAttendanceMethod;
+  const attendanceSource =
+    activity.phuongThucDiemDanh || defaultAttendanceMethod;
   const attendanceMethod =
-    mapAttendanceMethodToApi(attendanceSource) || mapAttendanceMethodToApi(defaultAttendanceMethod);
+    mapAttendanceMethodToApi(attendanceSource) ||
+    mapAttendanceMethodToApi(defaultAttendanceMethod);
   const attendanceMethodLabel =
     getAttendanceMethodLabel(attendanceMethod) ||
     getAttendanceMethodLabel(mapAttendanceMethodToApi(defaultAttendanceMethod));
@@ -880,9 +941,12 @@ const mapActivity = (activity, registration, options = {}) => {
     options.faceEnrollment ?? summarizeFaceProfile(options.faceProfile ?? null);
   const storedSemester = normalizeSemesterLabel(semesterRef?.ten);
   const storedAcademicYear = normalizeAcademicYearLabel(academicYearRef);
-  const fallbackSemesterInfo = deriveSemesterInfo(activity.batDauLuc ?? activity.ketThucLuc);
+  const fallbackSemesterInfo = deriveSemesterInfo(
+    activity.batDauLuc ?? activity.ketThucLuc,
+  );
   const semesterLabel = storedSemester ?? fallbackSemesterInfo.semester ?? null;
-  const academicYearLabel = storedAcademicYear ?? fallbackSemesterInfo.academicYear ?? null;
+  const academicYearLabel =
+    storedAcademicYear ?? fallbackSemesterInfo.academicYear ?? null;
   const semesterDisplay =
     semesterLabel && academicYearLabel
       ? `${semesterLabel} - ${academicYearLabel}`
@@ -900,14 +964,14 @@ const mapActivity = (activity, registration, options = {}) => {
     registeredAt: item.dangKyLuc?.toISOString() ?? null,
     updatedAt: item.updatedAt?.toISOString() ?? null,
     checkInAt: item.diemDanhLuc?.toISOString() ?? null,
-    student: mapStudentProfile(item.nguoiDung, { includeContact: true })
+    student: mapStudentProfile(item.nguoiDung, { includeContact: true }),
   }));
 
   const feedbackLogs = Array.isArray(activity.phanHoi)
     ? activity.phanHoi.map((feedbackItem) => ({
-      ...mapFeedback(feedbackItem),
-      student: mapStudentProfile(feedbackItem.nguoiDung)
-    }))
+        ...mapFeedback(feedbackItem),
+        student: mapStudentProfile(feedbackItem.nguoiDung),
+      }))
     : [];
 
   return {
@@ -930,7 +994,8 @@ const mapActivity = (activity, registration, options = {}) => {
     capacity: capacityLabel,
     maxCapacity: activity.sucChuaToiDa,
     coverImage:
-      coverMeta?.url ?? (typeof activity.hinhAnh === "string" ? activity.hinhAnh : null),
+      coverMeta?.url ??
+      (typeof activity.hinhAnh === "string" ? activity.hinhAnh : null),
     coverImageMeta: coverMeta,
     pointGroup,
     pointGroupLabel,
@@ -953,7 +1018,7 @@ const mapActivity = (activity, registration, options = {}) => {
     requiresFaceEnrollment: attendanceMethod === "photo",
     faceEnrollment,
     state: determineState(activity, registration),
-    registration: mapRegistration(registration, activity)
+    registration: mapRegistration(registration, activity),
   };
 };
 
@@ -961,15 +1026,22 @@ const buildActivityResponse = async (activityId, userId) => {
   const [activity, registration, faceProfile] = await Promise.all([
     prisma.hoatDong.findUnique({
       where: { id: activityId },
-      include: ACTIVITY_INCLUDE
+      include: ACTIVITY_INCLUDE,
     }),
     userId
       ? prisma.dangKyHoatDong.findUnique({
-        where: { nguoiDungId_hoatDongId: { nguoiDungId: userId, hoatDongId: activityId } },
-        include: REGISTRATION_INCLUDE
-      })
+          where: {
+            nguoiDungId_hoatDongId: {
+              nguoiDungId: userId,
+              hoatDongId: activityId,
+            },
+          },
+          include: REGISTRATION_INCLUDE,
+        })
       : null,
-    userId ? prisma.faceProfile.findUnique({ where: { nguoiDungId: userId } }) : null
+    userId
+      ? prisma.faceProfile.findUnique({ where: { nguoiDungId: userId } })
+      : null,
   ]);
 
   if (!activity) return null;
@@ -987,9 +1059,11 @@ const buildActivityResponse = async (activityId, userId) => {
 const mapActivitySummaryForRegistration = (activity, options = {}) => {
   if (!activity) return null;
   const defaultAttendanceMethod = getDefaultAttendanceMethod();
-  const attendanceSource = activity.phuongThucDiemDanh || defaultAttendanceMethod;
+  const attendanceSource =
+    activity.phuongThucDiemDanh || defaultAttendanceMethod;
   const attendanceMethod =
-    mapAttendanceMethodToApi(attendanceSource) || mapAttendanceMethodToApi(defaultAttendanceMethod);
+    mapAttendanceMethodToApi(attendanceSource) ||
+    mapAttendanceMethodToApi(defaultAttendanceMethod);
   const attendanceMethodLabel =
     getAttendanceMethodLabel(attendanceMethod) ||
     getAttendanceMethodLabel(mapAttendanceMethodToApi(defaultAttendanceMethod));
@@ -1020,7 +1094,8 @@ const mapActivitySummaryForRegistration = (activity, options = {}) => {
   };
 };
 
-const sanitizeStatusFilter = (value, allowed) => (allowed.includes(value) ? value : undefined);
+const sanitizeStatusFilter = (value, allowed) =>
+  allowed.includes(value) ? value : undefined;
 
 export {
   ACTIVE_REG_STATUSES,
