@@ -17,7 +17,7 @@ import {
   sanitizeOptionalText,
   sanitizeAttendanceEvidence,
   summarizeFaceHistoryRaw,
-} from "../../utils/activity.js";
+} from "../../utils/activity/index.js";
 import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
 export const markAttendance = asyncHandler(async (req, res) => {
@@ -65,11 +65,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
   const now = new Date();
 
   if (!startTime) {
-    return res
-      .status(400)
-      .json({
-        error: "Hoạt động chưa có thời gian bắt đầu, không thể điểm danh",
-      });
+    return res.status(400).json({
+      error: "Hoạt động chưa có thời gian bắt đầu, không thể điểm danh",
+    });
   }
 
   if (now < startTime) {
@@ -102,11 +100,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
   }
 
   if (isCheckout && !hasCheckin) {
-    return res
-      .status(400)
-      .json({
-        error: "Bạn cần điểm danh đầu giờ trước khi điểm danh cuối giờ",
-      });
+    return res.status(400).json({
+      error: "Bạn cần điểm danh đầu giờ trước khi điểm danh cuối giờ",
+    });
   }
 
   if (isCheckout && hasCheckout) {

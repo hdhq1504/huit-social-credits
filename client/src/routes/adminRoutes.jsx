@@ -3,12 +3,17 @@ import { ROUTE_PATHS } from '@/config/routes.config';
 
 const DashboardPage = lazy(() => import('@/admin/pages/DashboardPage/DashboardPage'));
 const ActivitiesPage = lazy(() => import('@/admin/pages/ActivitiesPage/ActivitiesPage'));
+const ActivitiesAddEditPage = lazy(() => import('@/admin/pages/ActivitiesAddEditPage/ActivitiesAddEditPage'));
+const ActivitiesDetailPage = lazy(() => import('@/admin/pages/ActivitiesDetailPage/ActivitiesDetailPage'));
 const ScoringPage = lazy(() => import('@/admin/pages/ScoringPage/ScoringPage'));
+const ScoringDetailPage = lazy(() => import('@/admin/pages/ScoringDetailPage/ScoringDetailPage'));
 const FeedbackPage = lazy(() => import('@/admin/pages/FeedbackPage/FeedbackPage'));
+const FeedbackDetailPage = lazy(() => import('@/admin/pages/FeedbackDetailPage/FeedbackDetailPage'));
 const ReportsPage = lazy(() => import('@/admin/pages/ReportsPage/ReportsPage'));
 const CouncilPage = lazy(() => import('@/admin/pages/CouncilPage/CouncilPage'));
 const SystemPage = lazy(() => import('@/admin/pages/SystemPage/SystemPage'));
 const UsersPage = lazy(() => import('@/admin/pages/UsersPage/UsersPage'));
+const UsersAddEditPage = lazy(() => import('@/admin/pages/UsersAddEditPage/UsersAddEditPage'));
 const StudentsPage = lazy(() => import('@/admin/pages/StudentsPage/StudentsPage'));
 const LecturersPage = lazy(() => import('@/admin/pages/LecturersPage/LecturersPage'));
 const AcademicYearsPage = lazy(() => import('@/admin/pages/AcademicYearsPage/AcademicYearsPage'));
@@ -35,6 +40,33 @@ export const adminRoutes = [
     },
   },
   {
+    path: 'activities/create',
+    component: ActivitiesAddEditPage,
+    meta: {
+      key: 'activities-create',
+      label: 'Tạo hoạt động mới',
+      hideInSidebar: true,
+    },
+  },
+  {
+    path: 'activities/:id',
+    component: ActivitiesDetailPage,
+    meta: {
+      key: 'activities-detail',
+      label: 'Chi tiết hoạt động',
+      hideInSidebar: true,
+    },
+  },
+  {
+    path: 'activities/:id/edit',
+    component: ActivitiesAddEditPage,
+    meta: {
+      key: 'activities-edit',
+      label: 'Chỉnh sửa hoạt động',
+      hideInSidebar: true,
+    },
+  },
+  {
     path: lastPathSegment(ROUTE_PATHS.ADMIN.SCORING), // 'scoring'
     component: ScoringPage,
     meta: {
@@ -44,12 +76,30 @@ export const adminRoutes = [
     },
   },
   {
+    path: 'scoring/:id',
+    component: ScoringDetailPage,
+    meta: {
+      key: 'scoring-detail',
+      label: 'Chi tiết điểm rèn luyện',
+      hideInSidebar: true,
+    },
+  },
+  {
     path: lastPathSegment(ROUTE_PATHS.ADMIN.FEEDBACK), // 'feedback'
     component: FeedbackPage,
     meta: {
       key: 'feedback',
       label: 'Phản hồi sinh viên',
       icon: 'MessageOutlined',
+    },
+  },
+  {
+    path: 'feedback/:id',
+    component: FeedbackDetailPage,
+    meta: {
+      key: 'feedback-detail',
+      label: 'Chi tiết phản hồi',
+      hideInSidebar: true,
     },
   },
   {
@@ -95,6 +145,24 @@ export const adminRoutes = [
       key: 'users',
       label: 'Quản lý tài khoản',
       icon: 'UserGearOutlined',
+    },
+  },
+  {
+    path: 'users/create',
+    component: UsersAddEditPage,
+    meta: {
+      key: 'users-create',
+      label: 'Tạo tài khoản mới',
+      hideInSidebar: true,
+    },
+  },
+  {
+    path: 'users/:id/edit',
+    component: UsersAddEditPage,
+    meta: {
+      key: 'users-edit',
+      label: 'Chỉnh sửa tài khoản',
+      hideInSidebar: true,
     },
   },
   {

@@ -1,4 +1,4 @@
-import { useEffect, Fragment, Suspense, lazy } from 'react';
+import { useEffect, Fragment, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConfigProvider, Spin } from 'antd';
@@ -16,13 +16,6 @@ import TeacherLayout from './teacher/layouts/TeacherLayout/TeacherLayout';
 import useAuthStore from './stores/useAuthStore';
 import { ROUTE_PATHS } from './config/routes.config';
 import { setQueryClientRef } from './api/auth.api';
-
-// Lazy load admin detail pages
-const ActivitiesAddEditPage = lazy(() => import('./admin/pages/ActivitiesAddEditPage/ActivitiesAddEditPage'));
-const ActivitiesDetailPage = lazy(() => import('./admin/pages/ActivitiesDetailPage/ActivitiesDetailPage'));
-const FeedbackDetailPage = lazy(() => import('./admin/pages/FeedbackDetailPage/FeedbackDetailPage'));
-const ScoringDetailPage = lazy(() => import('./admin/pages/ScoringDetailPage/ScoringDetailPage'));
-const UsersAddEditPage = lazy(() => import('./admin/pages/UsersAddEditPage/UsersAddEditPage'));
 
 // Loading fallback
 const PageLoader = () => (
@@ -143,16 +136,8 @@ function App() {
 
                 {adminRoutes.map((route) => {
                   const Page = route.component;
-                  return <Route key={route.path} path={route.path} element={<Page />} />;
+                  return <Route key={route.meta.key} path={route.path} element={<Page />} />;
                 })}
-
-                <Route path="activities/create" element={<ActivitiesAddEditPage />} />
-                <Route path="activities/:id/edit" element={<ActivitiesAddEditPage />} />
-                <Route path="activities/:id" element={<ActivitiesDetailPage />} />
-                <Route path="scoring/:id" element={<ScoringDetailPage />} />
-                <Route path="feedback/:id" element={<FeedbackDetailPage />} />
-                <Route path="users/create" element={<UsersAddEditPage />} />
-                <Route path="users/:id/edit" element={<UsersAddEditPage />} />
               </Route>
 
               <Route

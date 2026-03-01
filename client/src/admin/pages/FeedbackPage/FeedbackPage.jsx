@@ -205,7 +205,7 @@ function FeedbackPage() {
 
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => index,
+      index: ({ index }) => index + 1,
       student: ({ record }) => (
         <div className={cx('feedback-page__student-cell')}>
           <Avatar src={record.student?.avatarUrl} size={36} className={cx('feedback-page__avatar')}>

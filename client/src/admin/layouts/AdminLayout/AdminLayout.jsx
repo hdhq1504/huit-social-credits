@@ -49,11 +49,13 @@ function AdminLayout() {
 
   const sidebarItems = useMemo(
     () =>
-      adminRoutes.map((route) => ({
-        path: `/admin/${route.path}`,
-        label: route.meta.label,
-        iconKey: iconByKey[route.meta.icon] || 'dashboard',
-      })),
+      adminRoutes
+        .filter((route) => !route.meta.hideInSidebar)
+        .map((route) => ({
+          path: `/admin/${route.path}`,
+          label: route.meta.label,
+          iconKey: iconByKey[route.meta.icon] || 'dashboard',
+        })),
     [],
   );
 

@@ -49,7 +49,7 @@ const useAuthStore = create(
             const user = await authApi.me();
             set({
               isLoggedIn: true,
-              user: normalizeUser(user)
+              user: normalizeUser(user),
             });
             return;
           } catch {
@@ -58,14 +58,11 @@ const useAuthStore = create(
         }
 
         try {
-          const response = await fetch(
-            `${import.meta.env.VITE_API_URL || 'http://localhost:8080/api'}/auth/refresh`,
-            {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' }
-            }
-          );
+          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8080/api'}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+          });
 
           if (response.ok) {
             const data = await response.json();
@@ -75,7 +72,7 @@ const useAuthStore = create(
               const user = await authApi.me();
               set({
                 isLoggedIn: true,
-                user: normalizeUser(user)
+                user: normalizeUser(user),
               });
               return;
             }

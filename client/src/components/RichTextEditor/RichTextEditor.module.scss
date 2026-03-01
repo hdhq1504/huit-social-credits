@@ -1,16 +1,285 @@
-.editor {
-  .ql-toolbar {
-    border-radius: 8px 8px 0 0;
-  }
+/* ─── Design tokens ─── */
+$editor-radius: 10px;
+$toolbar-bg: #fafbfc;
+$toolbar-border: #e2e6ea;
+$editor-border: rgba(0, 0, 0, 0.15);
+$editor-focus-shadow: 0 0 0 2.5px rgba(0, 0, 139, 0.12);
+$btn-size: 32px;
+$btn-radius: 6px;
+$transition: 0.15s ease;
 
-  .ql-container {
-    min-height: 200px;
-    border-radius: 0 0 8px 8px;
+/* ─── Editor wrapper ─── */
+.editor {
+  border: 1px solid $editor-border;
+  border-radius: $editor-radius;
+  overflow: hidden;
+  background: var(--white-color);
+  transition:
+    border-color $transition,
+    box-shadow $transition;
+  font-family: 'Montserrat', sans-serif;
+
+  &--focused {
+    border-color: var(--primary-color);
+    box-shadow: $editor-focus-shadow;
   }
 
   &--readonly {
-    .ql-toolbar {
-      display: none;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* ─── Editor content area ─── */
+  &__content {
+    :global(.tiptap) {
+      min-height: 200px;
+      max-height: 500px;
+      overflow-y: auto;
+      padding: 16px 20px;
+      outline: none;
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--black-color);
+
+      > * + * {
+        margin-top: 0.5em;
+      }
+
+      /* Headings */
+      h1 {
+        font-size: 1.75em;
+        font-weight: 700;
+        line-height: 1.3;
+        margin-top: 1em;
+        color: var(--black-color);
+      }
+
+      h2 {
+        font-size: 1.4em;
+        font-weight: 600;
+        line-height: 1.35;
+        margin-top: 0.8em;
+        color: var(--black-color);
+      }
+
+      h3 {
+        font-size: 1.15em;
+        font-weight: 600;
+        line-height: 1.4;
+        margin-top: 0.6em;
+        color: var(--black-color);
+      }
+
+      /* Paragraph */
+      p {
+        margin: 0;
+
+        &.is-editor-empty:first-child::before {
+          content: attr(data-placeholder);
+          float: left;
+          color: var(--muted-color);
+          pointer-events: none;
+          height: 0;
+          font-style: italic;
+        }
+      }
+
+      /* Lists */
+      ul,
+      ol {
+        padding-left: 24px;
+
+        li {
+          margin-bottom: 2px;
+
+          p {
+            margin: 0;
+          }
+        }
+      }
+
+      ul {
+        list-style-type: disc;
+      }
+
+      ol {
+        list-style-type: decimal;
+      }
+
+      /* Blockquote */
+      blockquote {
+        border-left: 3px solid var(--primary-color);
+        padding: 8px 16px;
+        margin: 8px 0;
+        background: var(--secondary-color);
+        border-radius: 0 $btn-radius $btn-radius 0;
+        color: #333;
+        font-style: italic;
+
+        p {
+          margin: 0;
+        }
+      }
+
+      /* Code block */
+      pre {
+        background: #1e1e2e;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin: 8px 0;
+        overflow-x: auto;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 13.5px;
+        line-height: 1.6;
+
+        code {
+          color: #cdd6f4;
+          background: none;
+          padding: 0;
+          font-size: inherit;
+        }
+      }
+
+      /* Inline code */
+      code {
+        background: rgba(0, 0, 139, 0.06);
+        color: var(--primary-color);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 0.88em;
+      }
+
+      /* Link */
+      a,
+      .editor-link {
+        color: var(--primary-color);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+        transition: color $transition;
+
+        &:hover {
+          color: var(--primary-hover-color);
+        }
+      }
+
+      /* Image */
+      img,
+      .editor-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        margin: 8px 0;
+        display: block;
+      }
+
+      /* Highlight */
+      mark {
+        background: #fff3bf;
+        padding: 1px 3px;
+        border-radius: 3px;
+      }
+
+      /* Horizontal rule */
+      hr {
+        border: none;
+        border-top: 2px solid $toolbar-border;
+        margin: 16px 0;
+      }
+
+      /* Strong / Bold */
+      strong {
+        font-weight: 600;
+      }
+    }
+  }
+}
+
+/* ─── Toolbar ─── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 12px;
+  background: $toolbar-bg;
+  border-bottom: 1px solid $toolbar-border;
+
+  /* Button groups */
+  &__group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* Divider between groups */
+  &__divider {
+    width: 1px;
+    height: 20px;
+    background: $toolbar-border;
+    margin: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* Individual button */
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: $btn-size;
+    height: $btn-size;
+    border: none;
+    border-radius: $btn-radius;
+    background: transparent;
+    color: #555;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all $transition;
+    position: relative;
+
+    &:hover:not(&--disabled) {
+      background: #e8eaef;
+      color: var(--black-color);
+    }
+
+    &--active {
+      background: var(--secondary-color) !important;
+      color: var(--primary-color) !important;
+      font-weight: 600;
+    }
+
+    &--disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  }
+
+  /* Heading select dropdown */
+  &__heading-select {
+    height: $btn-size;
+    min-width: 100px;
+    padding: 0 10px;
+    border: 1px solid $toolbar-border;
+    border-radius: $btn-radius;
+    background: var(--white-color);
+    color: #333;
+    font-size: 13px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    outline: none;
+    transition: all $transition;
+    appearance: auto;
+
+    &:hover {
+      border-color: #c0c5cc;
+    }
+
+    &:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(0, 0, 139, 0.08);
     }
   }
 }

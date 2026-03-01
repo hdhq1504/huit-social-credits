@@ -7,7 +7,7 @@ import {
   mapActivity,
   buildActivityResponse,
   sanitizeOptionalText,
-} from "../../utils/activity.js";
+} from "../../utils/activity/index.js";
 import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
 export const listActivities = asyncHandler(async (req, res) => {
@@ -20,6 +20,8 @@ export const listActivities = asyncHandler(async (req, res) => {
 
   if (sort === "createdAt:desc") {
     orderBy = [{ createdAt: "desc" }];
+  } else if (sort === "updatedAt:desc") {
+    orderBy = [{ updatedAt: "desc" }];
   }
 
   const searchTerm = sanitizeOptionalText(search, 100);

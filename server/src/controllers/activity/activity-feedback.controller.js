@@ -7,7 +7,7 @@ import {
   mapFeedback,
   sanitizeFeedbackAttachmentList,
   computeFeedbackWindow,
-} from "../../utils/activity.js";
+} from "../../utils/activity/index.js";
 import { extractStoragePaths } from "../../utils/storageMapper.js";
 import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
@@ -47,23 +47,19 @@ export const submitActivityFeedback = asyncHandler(async (req, res) => {
   }
 
   if (registration.trangThai !== "CHO_DUYET") {
-    return res
-      .status(400)
-      .json({
-        error: "Kết quả điểm danh đã được xử lý, không thể gửi phản hồi",
-      });
+    return res.status(400).json({
+      error: "Kết quả điểm danh đã được xử lý, không thể gửi phản hồi",
+    });
   }
 
   const history = registration.lichSuDiemDanh || [];
   const hasFaceIssue = history.some((entry) => entry.faceMatch === "REVIEW");
 
   if (!hasFaceIssue) {
-    return res
-      .status(400)
-      .json({
-        error:
-          "Bạn không thuộc diện cần phản hồi minh chứng (không có ảnh cần kiểm tra)",
-      });
+    return res.status(400).json({
+      error:
+        "Bạn không thuộc diện cần phản hồi minh chứng (không có ảnh cần kiểm tra)",
+    });
   }
 
   const { start, end } = computeFeedbackWindow(

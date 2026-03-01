@@ -15,17 +15,25 @@ export const activitiesApi = {
   },
 
   /**
-   * Lấy danh sách hoạt động gần đây (giới hạn 5, sắp xếp mới nhất).
-   * @returns {Promise<Array>} Danh sách 5 hoạt động gần nhất.
+   * Lấy danh sách hoạt động gần đây (giới hạn 5, sắp xếp theo cập nhật mới nhất).
+   * @returns {Promise<Array>} Danh sách 5 hoạt động cập nhật gần nhất.
    */
   async getRecent() {
     const { data } = await http.get('/activities', {
       params: {
         limit: 5,
-        sort: 'createdAt:desc',
+        sort: 'updatedAt:desc',
       },
     });
-    return data.activities ?? [];
+    const activities = data.activities ?? [];
+    // Auto-derive type: if updatedAt > createdAt, it's an update
+    return activities.map((activity) => {
+      const created = new Date(activity.createdAt).getTime();
+      const updated = new Date(activity.updatedAt || activity.createdAt).getTime();
+      // Consider as UPDATED if updatedAt is more than 5 seconds after createdAt
+      const type = updated - created > 5000 ? 'UPDATED' : 'CREATED';
+      return { ...activity, type };
+    });
   },
 
   /**

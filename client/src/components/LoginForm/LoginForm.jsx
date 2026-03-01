@@ -119,10 +119,7 @@ function LoginForm() {
                 error={errors.password}
                 disabled={isLoading}
               />
-              <span
-                className={cx('login-form__password-toggle')}
-                onClick={() => setShowPassword(!showPassword)}
-              >
+              <span className={cx('login-form__password-toggle')} onClick={() => setShowPassword(!showPassword)}>
                 <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
               </span>
             </div>

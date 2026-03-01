@@ -19,7 +19,7 @@ import {
   REGISTRATION_STATUSES,
   sanitizeOptionalText,
   sanitizeStatusFilter,
-} from "../../utils/activity.js";
+} from "../../utils/activity/index.js";
 import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
 /**

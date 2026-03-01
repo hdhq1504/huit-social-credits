@@ -10,7 +10,7 @@ import dayjs from 'dayjs';
 import activitiesApi, { ACTIVITIES_QUERY_KEY } from '@/api/activities.api';
 import { AdminPageContext } from '@/admin/contexts/AdminPageContext';
 import AdminTable from '@/admin/components/AdminTable/AdminTable';
-import { ROUTE_PATHS } from '@/config/routes.config';
+import { ROUTE_PATHS, buildPath } from '@/config/routes.config';
 import useTable from '@/hooks/useTable';
 import useModal from '@/hooks/useModal';
 import useConfirmDialog from '@/hooks/useConfirmDialog';
@@ -279,12 +279,12 @@ export default function ActivitiesPage() {
   // Column renderers
   const columnRenderers = useMemo(
     () => ({
-      index: ({ index }) => index,
+      index: ({ index }) => index + 1,
       title: ({ value, record }) => (
         <Tooltip title={value}>
           <span
             className={cx('activities-page__link')}
-            onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/${record.id}`)}
+            onClick={() => navigate(buildPath.adminActivityDetail(record.id))}
           >
             {value}
           </span>
@@ -298,11 +298,7 @@ export default function ActivitiesPage() {
           {value != null ? `+${value}` : '--'}
         </span>
       ),
-      capacity: ({ record }) => (
-        <span>
-          {record.registrationCount ?? 0}/{record.capacity ?? '∞'}
-        </span>
-      ),
+      capacity: ({ record }) => <span>{record.capacity ?? '∞'}</span>,
       startTime: ({ value }) => formatDateTime(value),
       endTime: ({ value }) => formatDateTime(value),
       state: ({ record }) => getStatusTag(deriveStatusCategory(record)),
@@ -313,7 +309,7 @@ export default function ActivitiesPage() {
             <button
               type="button"
               className={cx('activities-page__action-button')}
-              onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/${record.id}`)}
+              onClick={() => navigate(buildPath.adminActivityDetail(record.id))}
             >
               <FontAwesomeIcon icon={faEye} />
             </button>
@@ -321,8 +317,8 @@ export default function ActivitiesPage() {
           <Tooltip title="Chỉnh sửa">
             <button
               type="button"
-              className={cx('activities-page__action-button')}
-              onClick={() => navigate(`${ROUTE_PATHS.ADMIN.ACTIVITIES}/edit/${record.id}`)}
+              className={cx('activities-page__action-button', 'activities-page__action-button--edit')}
+              onClick={() => navigate(buildPath.adminActivityEdit(record.id))}
             >
               <FontAwesomeIcon icon={faEdit} />
             </button>

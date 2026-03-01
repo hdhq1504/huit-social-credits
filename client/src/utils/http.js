@@ -23,7 +23,8 @@ http.interceptors.response.use(
   async (error) => {
     const original = error.config;
 
-    const isAuthEndpoint = original.url?.includes('/auth/login') ||
+    const isAuthEndpoint =
+      original.url?.includes('/auth/login') ||
       original.url?.includes('/auth/register') ||
       original.url?.includes('/auth/refresh');
 
@@ -31,13 +32,15 @@ http.interceptors.response.use(
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           pending.push({ resolve, reject });
-        }).then((token) => {
-          original.headers.Authorization = `Bearer ${token}`;
-          return http.request(original);
-        }).catch(err => {
-          useAuthStore.getState().logout();
-          return Promise.reject(err);
-        });
+        })
+          .then((token) => {
+            original.headers.Authorization = `Bearer ${token}`;
+            return http.request(original);
+          })
+          .catch((err) => {
+            useAuthStore.getState().logout();
+            return Promise.reject(err);
+          });
       }
 
       original._retry = true;

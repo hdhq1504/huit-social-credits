@@ -14,7 +14,7 @@ import {
   sanitizeCapacity,
   sanitizeStringArray,
   toDate,
-} from "../../utils/activity.js";
+} from "../../utils/activity/index.js";
 import { asyncHandler } from "../../middlewares/asyncHandler.js";
 
 export const createActivity = asyncHandler(async (req, res) => {

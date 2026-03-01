@@ -96,7 +96,11 @@ const transformActivity = (activity) => {
     iconClassName: iconInfo.className,
     title: message.title,
     desc: message.desc,
-    time: activity.createdAt ? dayjs(activity.createdAt).fromNow() : 'Vừa xong',
+    time: activity.updatedAt
+      ? dayjs(activity.updatedAt).fromNow()
+      : activity.createdAt
+        ? dayjs(activity.createdAt).fromNow()
+        : 'Vừa xong',
   };
 };
 
